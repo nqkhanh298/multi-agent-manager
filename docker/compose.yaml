@@ -1,0 +1,32 @@
+services:
+  postgres:
+    image: postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
+    environment:
+      POSTGRES_USER: coding
+      POSTGRES_PASSWORD: coding
+      POSTGRES_DB: coding
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - m4_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U coding -d coding"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+  redis:
+    image: redis:7-alpine@sha256:8da19c7399dca900c6822a1cf30f9d2285585e2c4b457ff4095b0f4500054d3f
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - m4_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
+volumes:
+  m4_postgres:
+  m4_redis:

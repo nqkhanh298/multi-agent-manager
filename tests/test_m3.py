@@ -45,6 +45,19 @@ def test_parallel_limit_one_runs_independent_tasks_sequentially(tmp_path):
     assert [item["task_id"] for item in report["merges"]] == ["T1", "T2"]
 
 
+def test_pause_then_resume_keeps_merged_progress(tmp_path):
+    runner = M3Runner(
+        tmp_path, max_parallel=1, sandbox_factory=lambda workspace, role: FakeSandbox(workspace)
+    )
+    checks = iter([None, "PAUSED"])
+    paused = runner.run("task app", run_id="paused-run", control=lambda: next(checks))
+    assert paused["status"] == "PAUSED"
+    assert [item["task_id"] for item in paused["merges"]] == ["T1"]
+    resumed = runner.run("task app", run_id="paused-run")
+    assert resumed["status"] == "COMPLETED"
+    assert [item["task_id"] for item in resumed["merges"]] == ["T1", "T2"]
+
+
 def test_dependency_waits_for_merge(tmp_path):
     class DependentCoordinator:
         def create_plan(self, request):

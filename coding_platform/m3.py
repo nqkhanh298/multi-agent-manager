@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .contracts import ToolCall
 from .plan import Plan, TaskSpec
-from .sandbox import DockerSandbox
+from .sandbox import DockerSandbox, SandboxCancelled
 
 BACKEND = """def create_task(title: str) -> dict:
     title = title.strip()
@@ -276,6 +276,15 @@ class M3Runner:
                 "started_ns": started,
                 "ended_ns": time.monotonic_ns(),
             }
+        except SandboxCancelled as exc:
+            return {
+                "task_id": task.id,
+                "status": "CANCELLED",
+                "workspace": str(worktree),
+                "reason": str(exc),
+                "started_ns": started,
+                "ended_ns": time.monotonic_ns(),
+            }
         except (RuntimeError, GitError) as exc:
             return {
                 "task_id": task.id,
@@ -314,26 +323,52 @@ class M3Runner:
             "reason": merge.stderr[-4000:] or merge.stdout[-4000:],
         }
 
-    def run(self, request: str) -> dict:
-        plan = Plan.model_validate(self.coordinator.create_plan(request))
+    def run(self, request: str, run_id=None, control=None, on_event=None) -> dict:
+        run_id = run_id or str(uuid.uuid4())
+        run_dir = (self.root / "m3-runs" / run_id).resolve()
+        report_path = run_dir / "report.json"
+        if report_path.exists():
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            if report["status"] != "PAUSED":
+                raise ValueError("only paused M3 runs can resume")
+            plan = Plan.model_validate(report["plan"])
+            report["status"] = "RUNNING"
+        else:
+            plan = Plan.model_validate(self.coordinator.create_plan(request))
+            run_dir.mkdir(parents=True, exist_ok=False)
+            self._initialize(run_dir)
+            report = {
+                "run_id": run_id,
+                "status": "RUNNING",
+                "plan": plan.model_dump(),
+                "tasks": [],
+                "merges": [],
+                "parallel_overlap_ms": 0,
+                "integration": None,
+            }
         if any(task.agent not in {"backend_dev", "frontend_dev", "qa"} for task in plan.tasks):
             raise ValueError("M3 supports backend_dev, frontend_dev and qa")
-        run_id = str(uuid.uuid4())
-        run_dir = (self.root / "m3-runs" / run_id).resolve()
-        run_dir.mkdir(parents=True, exist_ok=False)
-        repo = self._initialize(run_dir)
-        report = {
-            "run_id": run_id,
-            "status": "RUNNING",
-            "plan": plan.model_dump(),
-            "tasks": [],
-            "merges": [],
-            "parallel_overlap_ms": 0,
-            "integration": None,
-        }
-        pending = {task.id: task for task in plan.tasks}
-        completed: set[str] = set()
+        repo = run_dir / "repo"
+        completed = {item["task_id"] for item in report["merges"] if item["status"] == "MERGED"}
+        completed.update(
+            item["task_id"]
+            for item in report["tasks"]
+            if item["status"] == "COMPLETED"
+            and any(task.id == item["task_id"] and task.agent == "qa" for task in plan.tasks)
+        )
+        pending = {task.id: task for task in plan.tasks if task.id not in completed}
+
+        def save() -> None:
+            temporary = report_path.with_suffix(".tmp")
+            temporary.write_text(json.dumps(report, indent=2), encoding="utf-8")
+            temporary.replace(report_path)
+
+        save()
         while pending and report["status"] == "RUNNING":
+            requested = control() if control else None
+            if requested in {"PAUSED", "CANCELLED"}:
+                report["status"] = requested
+                break
             ready = [
                 task
                 for task in plan.tasks
@@ -356,6 +391,11 @@ class M3Runner:
                     }
                     results = [future.result() for future in as_completed(futures)]
                 report["tasks"].extend(results)
+                if on_event:
+                    for item in results:
+                        on_event(
+                            "task.status", {"task_id": item["task_id"], "status": item["status"]}
+                        )
                 if len(results) > 1:
                     start = max(item["started_ns"] for item in results)
                     end = min(item["ended_ns"] for item in results)
@@ -363,26 +403,42 @@ class M3Runner:
                         report["parallel_overlap_ms"], max(0, (end - start) // 1_000_000)
                     )
                 if any(item["status"] != "COMPLETED" for item in results):
-                    report.update(status="BLOCKED", reason="coding task failed")
+                    report.update(
+                        status="CANCELLED"
+                        if any(item["status"] == "CANCELLED" for item in results)
+                        else "BLOCKED",
+                        reason="coding task stopped",
+                    )
                     break
                 for task in coding:
                     merged = self._merge(repo, task)
                     report["merges"].append(merged)
+                    if on_event:
+                        on_event("task.merge", {"task_id": task.id, "status": merged["status"]})
                     if merged["status"] != "MERGED":
                         report.update(status="BLOCKED", reason="merge conflict")
                         break
                     completed.add(task.id)
                     del pending[task.id]
+                save()
             if report["status"] != "RUNNING":
                 break
             for task in qa:
-                build = self.sandbox_factory(repo, "qa_frontend").execute(
-                    ToolCall(
-                        f"{task.id}-frontend-build",
-                        "run_command",
-                        {"argv": ["sh", "/opt/m3/build.sh"], "timeout_seconds": 60},
+                requested = control() if control else None
+                if requested in {"PAUSED", "CANCELLED"}:
+                    report["status"] = requested
+                    break
+                try:
+                    build = self.sandbox_factory(repo, "qa_frontend").execute(
+                        ToolCall(
+                            f"{task.id}-frontend-build",
+                            "run_command",
+                            {"argv": ["sh", "/opt/m3/build.sh"], "timeout_seconds": 60},
+                        )
                     )
-                )
+                except SandboxCancelled:
+                    report["status"] = "CANCELLED"
+                    break
                 if not build.ok:
                     report["integration"] = {
                         "exit_code": build.exit_code,
@@ -391,16 +447,20 @@ class M3Runner:
                     }
                     report.update(status="BLOCKED", reason="merged frontend build failed")
                     break
-                result = self.sandbox_factory(repo, "qa").execute(
-                    ToolCall(
-                        f"{task.id}-integration",
-                        "run_command",
-                        {
-                            "argv": ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider"],
-                            "timeout_seconds": 60,
-                        },
+                try:
+                    result = self.sandbox_factory(repo, "qa").execute(
+                        ToolCall(
+                            f"{task.id}-integration",
+                            "run_command",
+                            {
+                                "argv": ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider"],
+                                "timeout_seconds": 60,
+                            },
+                        )
                     )
-                )
+                except SandboxCancelled:
+                    report["status"] = "CANCELLED"
+                    break
                 report["integration"] = {
                     "exit_code": result.exit_code,
                     "stdout": result.stdout,
@@ -410,12 +470,18 @@ class M3Runner:
                 report["tasks"].append(
                     {"task_id": task.id, "status": "COMPLETED" if result.ok else "FAILED"}
                 )
+                if on_event:
+                    on_event(
+                        "task.status",
+                        {"task_id": task.id, "status": "COMPLETED" if result.ok else "FAILED"},
+                    )
                 if not result.ok:
                     report.update(status="BLOCKED", reason="integration test failed")
                     break
                 completed.add(task.id)
                 del pending[task.id]
+                save()
         if not pending and report["status"] == "RUNNING":
             report["status"] = "COMPLETED"
-        (run_dir / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+        save()
         return report

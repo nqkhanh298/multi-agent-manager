@@ -1,11 +1,13 @@
-# Multi-Agent AI Coding Platform — M1 to M3
+# Multi-Agent AI Coding Platform — M1 to M4
 
-This repository contains the first three verified vertical slices described in
+This repository contains the first four verified vertical slices described in
 `MULTI_AGENT_CODING_PLATFORM_WINDOWS.md`. M1 runs one tool-using coding agent in
 Docker. M2 adds a validated task DAG, Coordinator, QA, a bounded repair loop and
 durable local LangGraph checkpoints. M3 schedules independent backend and React
 frontend tasks in separate Git worktrees, merges them in order, and runs
-integration QA. The API and dashboard belong to later milestones.
+integration QA. M4 adds a PostgreSQL-backed FastAPI control plane, Redis worker
+queue, event stream, run controls and artifact downloads. The visual dashboard
+belongs to M5.
 
 ## Requirements
 
@@ -67,6 +69,36 @@ commits, parallel overlap, and integration output. Use `--max-parallel 1` to
 run the independent tasks sequentially. Merge conflicts and failed tasks block
 the run and skip QA.
 
+## M4 backend in WSL
+
+Start infrastructure and migrate an empty PostgreSQL database:
+
+```bash
+docker compose -f docker/compose.yaml up -d --wait postgres redis
+alembic upgrade head
+python -m apps.api.bootstrap --name local
+```
+
+The bootstrap command prints a random API token once. Keep it private. Start
+the API and worker in separate WSL terminals:
+
+```bash
+uvicorn apps.api.main:app --host 127.0.0.1 --port 8000
+python -m apps.worker.main
+```
+
+Open `http://localhost:8000/docs` and use **Authorize** with the token. Create
+a project, then a run. The worker executes the fixed M3 task-manager benchmark;
+`GET /api/runs/{id}` shows status, and the task, event, tool-call and artifact
+endpoints show its results. WebSocket `/ws/runs/{id}` accepts a bearer header or
+an initial JSON message `{"token":"..."}`. Run the full integration benchmark
+with `python -m scripts.verify_m4` while the persistent worker is stopped;
+the script processes its own queued jobs.
+
+M4 data is stored in PostgreSQL and `.local/platform/`. Only the API and worker
+have database credentials; generated code runs in network-disabled Docker
+sandboxes. The API explorer is not the M5 dashboard.
+
 To use live model planning and coding, set `OPENAI_API_KEY` and run
 `python -m coding_platform.cli m2-demo --provider openai --model "$LLM_MODEL"`.
 This makes billable requests. The fixed calculator workflow accepts only a
@@ -101,13 +133,13 @@ and pytest run inside the container. The manager refuses to start on Windows.
 - M2 uses deterministic mock agents for its repeatable fail/repair benchmark.
   The live model path is wired and unit tested with simulated responses, but
   has not made a billable API request.
-- M3 provides local DAG scheduling and merge verification; it does not yet
-  connect the React UI to the Python backend. The API, worker queue, and
-  platform dashboard belong to later milestones.
+- M3 provides local DAG scheduling and merge verification. M4 exposes this
+  fixed mock workflow through an API and worker; the visual dashboard and a
+  general live-model workflow belong to later work.
 - M1 audit remains JSONL. M2 adds a durable SQLite tool journal but deliberately
   blocks uncertain side effects rather than guessing whether they completed.
 
 ## Test evidence
 
-See `docs/m1-report.md`, `docs/m2-report.md`, and `docs/m3-report.md` for evidence
-and limitations.
+See `docs/m1-report.md`, `docs/m2-report.md`, `docs/m3-report.md`, and
+`docs/m4-report.md` for evidence and limitations.

@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import time
+import uuid
 from pathlib import Path
 
 from .contracts import ToolCall, ToolResult
@@ -11,12 +12,17 @@ class SandboxUnavailable(RuntimeError):
     pass
 
 
+class SandboxCancelled(SandboxUnavailable):
+    pass
+
+
 class DockerSandbox:
     """Start a restricted Linux container for each tool call."""
 
-    def __init__(self, workspace: Path, image: str = "ai-coding-m1:local"):
+    def __init__(self, workspace: Path, image: str = "ai-coding-m1:local", cancel_check=None):
         self.workspace = workspace.resolve()
         self.image = image
+        self.cancel_check = cancel_check
         if os.name != "posix":
             raise SandboxUnavailable("Run the agent inside WSL2/Linux, not on Windows")
         if not self.workspace.is_dir():
@@ -56,13 +62,53 @@ class DockerSandbox:
             f"type=bind,src={self.workspace},dst=/workspace",
             "--workdir",
             "/workspace",
-            self.image,
         ]
+        container_name = f"coding-{uuid.uuid4().hex}"
+        if self.cancel_check:
+            argv.extend(["--name", container_name])
+        argv.append(self.image)
         started = time.monotonic()
         try:
-            completed = subprocess.run(
-                argv, input=payload, text=True, capture_output=True, timeout=125, check=False
-            )
+            if self.cancel_check:
+                if self.cancel_check():
+                    raise SandboxCancelled("sandbox cancelled before start")
+                process = subprocess.Popen(
+                    argv,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                sent = False
+                while True:
+                    try:
+                        stdout, stderr = process.communicate(
+                            input=payload if not sent else None, timeout=0.25
+                        )
+                        completed = subprocess.CompletedProcess(
+                            argv, process.returncode, stdout, stderr
+                        )
+                        break
+                    except subprocess.TimeoutExpired:
+                        sent = True
+                        cancelled = self.cancel_check()
+                        if cancelled or time.monotonic() - started > 125:
+                            subprocess.run(
+                                ["docker", "rm", "-f", container_name],
+                                capture_output=True,
+                                timeout=10,
+                                check=False,
+                            )
+                            if process.poll() is None:
+                                process.kill()
+                            process.communicate()
+                            if cancelled:
+                                raise SandboxCancelled("sandbox cancelled during tool call")
+                            raise SandboxUnavailable("sandbox tool call timed out")
+            else:
+                completed = subprocess.run(
+                    argv, input=payload, text=True, capture_output=True, timeout=125, check=False
+                )
         except FileNotFoundError as exc:
             raise SandboxUnavailable("Docker CLI is unavailable") from exc
         except subprocess.TimeoutExpired as exc:
