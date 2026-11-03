@@ -1,10 +1,11 @@
-# Multi-Agent AI Coding Platform — M1 and M2
+# Multi-Agent AI Coding Platform — M1 to M3
 
-This repository contains the first two verified vertical slices described in
+This repository contains the first three verified vertical slices described in
 `MULTI_AGENT_CODING_PLATFORM_WINDOWS.md`. M1 runs one tool-using coding agent in
 Docker. M2 adds a validated task DAG, Coordinator, QA, a bounded repair loop and
-durable local LangGraph checkpoints. It is not yet the full parallel platform or
-the dashboard.
+durable local LangGraph checkpoints. M3 schedules independent backend and React
+frontend tasks in separate Git worktrees, merges them in order, and runs
+integration QA. The API and dashboard belong to later milestones.
 
 ## Requirements
 
@@ -24,12 +25,14 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -e '.[dev]'
 docker build -f docker/sandbox.Dockerfile -t ai-coding-m1:local .
+docker build -f docker/frontend.Dockerfile -t ai-coding-m3-frontend:local .
 pytest -q
 ruff check .
 ruff format --check .
 python -m coding_platform.cli demo
 python -m scripts.verify_m1_sandbox
 python -m coding_platform.cli m2-demo
+python -m coding_platform.cli m3-demo
 ```
 
 `requirements.lock` records the exact resolved dependency versions from the
@@ -51,6 +54,16 @@ M2 stores LangGraph checkpoints and an idempotent tool-call journal in
 `.local/runs/<run-id>/`. A tool call left in an uncertain `started` state blocks
 automatic replay pending reconciliation. SQLite is the local development store;
 the platform backend milestone will move durable state to PostgreSQL.
+
+The M3 demo uses deterministic agents to create a Python task backend and a
+React/Vite frontend. Independent tasks execute concurrently in separate Git
+worktrees, each with its own sandbox check. Completed branches merge into an
+integration branch one at a time. QA rebuilds the merged frontend and runs the
+Python integration suite. The CLI prints a report whose run directory is
+`.local/m3-runs/<run-id>/`; `report.json` records task status, worktrees, merge
+commits, parallel overlap, and integration output. Use `--max-parallel 1` to
+run the independent tasks sequentially. Merge conflicts and failed tasks block
+the run and skip QA.
 
 To use live model planning and coding, set `OPENAI_API_KEY` and run
 `python -m coding_platform.cli m2-demo --provider openai --model "$LLM_MODEL"`.
@@ -86,10 +99,13 @@ and pytest run inside the container. The manager refuses to start on Windows.
 - M2 uses deterministic mock agents for its repeatable fail/repair benchmark.
   The live model path is wired and unit tested with simulated responses, but
   has not made a billable API request.
-- There is no parallel scheduler, API or UI yet. Those are later milestones.
+- M3 provides local DAG scheduling and merge verification; it does not yet
+  connect the React UI to the Python backend. The API, worker queue, and
+  platform dashboard belong to later milestones.
 - M1 audit remains JSONL. M2 adds a durable SQLite tool journal but deliberately
   blocks uncertain side effects rather than guessing whether they completed.
 
 ## Test evidence
 
-See `docs/m1-report.md` and `docs/m2-report.md` for evidence and limitations.
+See `docs/m1-report.md`, `docs/m2-report.md`, and `docs/m3-report.md` for evidence
+and limitations.

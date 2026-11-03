@@ -11,15 +11,31 @@ from .sandbox import DockerSandbox, SandboxUnavailable
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Sandboxed coding benchmarks")
-    parser.add_argument("command", choices=["demo", "m2-demo", "m2-resume"])
+    parser.add_argument("command", choices=["demo", "m2-demo", "m2-resume", "m3-demo"])
     parser.add_argument("--root", type=Path, default=Path(".local"))
     parser.add_argument("--run-id")
     parser.add_argument("--pause-after", choices=["implement", "qa"])
     parser.add_argument("--max-retries", type=int, default=int(os.getenv("MAX_TASK_RETRIES", "3")))
+    parser.add_argument(
+        "--max-parallel", type=int, default=int(os.getenv("MAX_PARALLEL_TASKS", "2"))
+    )
     parser.add_argument("--provider", choices=["mock", "openai"], default="mock")
     parser.add_argument("--model", default=os.getenv("LLM_MODEL", "CONFIGURE_ME"))
     parser.add_argument("--prompt", default="Build a Python calculator and run pytest")
     args = parser.parse_args()
+    if args.command == "m3-demo":
+        if args.provider != "mock":
+            parser.error("M3 demo currently supports only the mock provider")
+        from .m3 import M3Runner
+
+        request = (
+            "Build a task management app"
+            if args.prompt == parser.get_default("prompt")
+            else args.prompt
+        )
+        report = M3Runner(args.root, max_parallel=args.max_parallel).run(request)
+        print(json.dumps(report, indent=2))
+        return 0 if report["status"] == "COMPLETED" else 1
     if args.command in {"m2-demo", "m2-resume"}:
         from .m2 import M2Runner, concise_result
 
