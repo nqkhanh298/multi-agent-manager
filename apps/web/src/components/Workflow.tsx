@@ -38,6 +38,7 @@ const TaskCard = memo(function TaskCard({ data, selected }: NodeProps<TaskNode>)
       </div>
       <strong>{roleNames[task.agent_role] || task.agent_role}</strong>
       <small>{task.title}</small>
+      {(task.duration_ms != null || (task.input_tokens || 0) + (task.output_tokens || 0) > 0) && <div className="flow-card-metrics">{task.duration_ms != null && <span>{(task.duration_ms / 1000).toFixed(1)}s</span>}{(task.input_tokens || 0) + (task.output_tokens || 0) > 0 && <span>{(task.input_tokens || 0) + (task.output_tokens || 0)} tokens</span>}</div>}
       <Handle type="source" position={Position.Bottom} className="flow-handle" />
     </div>
   )

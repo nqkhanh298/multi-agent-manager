@@ -1,6 +1,6 @@
-# Multi-Agent AI Coding Platform — M1 to M5
+# Multi-Agent AI Coding Platform — M1 to M6
 
-This repository contains the first five verified vertical slices described in
+This repository contains all six local milestones described in
 `MULTI_AGENT_CODING_PLATFORM_WINDOWS.md`. M1 runs one tool-using coding agent in
 Docker. M2 adds a validated task DAG, Coordinator, QA, a bounded repair loop and
 durable local LangGraph checkpoints. M3 schedules independent backend and React
@@ -8,7 +8,10 @@ frontend tasks in separate Git worktrees, merges them in order, and runs
 integration QA. M4 adds a PostgreSQL-backed FastAPI control plane, Redis worker
 queue, event stream, run controls and artifact downloads. M5 adds a React
 dashboard with a live workflow graph, code and diff viewers, event and test
-output, approval decisions and browser tests.
+output, approval decisions and browser tests. M6 adds per-run budgets, worker
+heartbeat recovery, fault injection, security verification and a benchmark
+report. This is still a deterministic local demo, not a general prompt-to-app
+service.
 
 ## Requirements
 
@@ -133,6 +136,47 @@ The optional live browser case requires `M5_LIVE_TOKEN` and the running M4
 services; without it, that case is skipped. See `docs/m5-report.md` for the
 verified local run and remaining limits.
 
+## M6 hardening and verification
+
+After updating the code in WSL, apply the new schema before restarting the API
+and worker:
+
+```bash
+alembic upgrade head
+alembic check
+```
+
+Each new run records a USD cap (default 5), a wall-clock cap (default 1800
+seconds), and a per-task tool-call cap (default 20). Set `MAX_RUN_USD`,
+`MAX_RUN_SECONDS`, or `MAX_AGENT_STEPS` in the API/worker environment to change
+the defaults. The worker heartbeats every five seconds. If a run loses its
+heartbeat, recovery marks it `BLOCKED` and in-flight tool calls `UNKNOWN` for
+manual reconciliation; it does not repeat those tool calls. The stale threshold
+is `WORKER_STALE_SECONDS` (default 30). The deterministic M3 agents make no
+billable model calls, so their recorded model spend and token counts are zero.
+
+Verify from WSL with:
+
+```bash
+ruff check .
+ruff format --check .
+pytest -q
+python -m scripts.verify_m1_sandbox
+```
+
+Stop the persistent worker before running the following integration checks;
+each test controls its own queue worker:
+
+```bash
+python -m scripts.verify_m4
+python -m scripts.verify_m6_faults
+```
+
+The M6 fault test kills its own worker after a durable tool intent, then checks
+that the run blocks, the tool outcome is unknown, and duplicate delivery is
+skipped. See `docs/m6-report.md` for benchmark results, setup verification and
+remaining risks.
+
 To use live model planning and coding, set `OPENAI_API_KEY` and run
 `python -m coding_platform.cli m2-demo --provider openai --model "$LLM_MODEL"`.
 This makes billable requests. The fixed calculator workflow accepts only a
@@ -171,12 +215,15 @@ and pytest run inside the container. The manager refuses to start on Windows.
   fixed mock workflow through an API and worker; M5 visualizes it. A general
   live-model workflow remains future work.
 - M4 does not record per-agent token usage or duration, so M5 does not invent
-  these values. The approval UI is verified with a browser fixture; the fixed
-  benchmark does not create an approval request on its own.
+  these values. M6 now records task duration and has counters for model tokens
+  and cost; the fixed mock benchmark records zero model usage. The approval UI
+  is verified with a browser fixture; the fixed benchmark does not create an
+  approval request on its own.
 - M1 audit remains JSONL. M2 adds a durable SQLite tool journal but deliberately
   blocks uncertain side effects rather than guessing whether they completed.
 
 ## Test evidence
 
 See `docs/m1-report.md`, `docs/m2-report.md`, `docs/m3-report.md`,
-`docs/m4-report.md`, and `docs/m5-report.md` for evidence and limitations.
+`docs/m4-report.md`, `docs/m5-report.md`, and `docs/m6-report.md` for evidence
+and limitations.

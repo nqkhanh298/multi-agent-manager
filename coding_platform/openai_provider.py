@@ -110,7 +110,11 @@ class OpenAIResponsesProvider(ModelProvider):
             with urllib.request.urlopen(request_obj, timeout=90) as response:
                 data = json.load(response)
         except urllib.error.HTTPError as exc:
-            raise RuntimeError(f"OpenAI API returned HTTP {exc.code}") from exc
+            if exc.code == 429:
+                raise RuntimeError("model rate limit reached") from None
+            raise RuntimeError(f"OpenAI API returned HTTP {exc.code}") from None
+        except (TimeoutError, urllib.error.URLError):
+            raise RuntimeError("model request timed out or network unavailable") from None
         self.previous_response_id = data["id"]
         calls = [item for item in data.get("output", []) if item.get("type") == "function_call"]
         if len(calls) > 1:

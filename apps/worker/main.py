@@ -4,10 +4,19 @@ import argparse
 import hashlib
 import json
 import os
+import threading
+from datetime import timezone
 
 import redis
 from sqlalchemy import select
 
+from apps.api.budget import (
+    BudgetExceeded,
+    BudgetLimits,
+    enforce_tool_budget,
+    positive_int,
+    run_budget_reason,
+)
 from apps.api.db import SessionLocal
 from apps.api.models import AgentExecution, Event, Outbox, Run, Task, ToolCallRecord, now_utc
 from apps.api.service import (
@@ -45,6 +54,8 @@ def control_for(run_id: str) -> str | None:
     with SessionLocal() as session:
         run = session.get(Run, run_id)
         if run.cancel_requested:
+            return "CANCELLED"
+        if run_budget_reason(run):
             return "CANCELLED"
         if run.pause_requested:
             return "PAUSED"
@@ -95,6 +106,8 @@ def record_tool_start(run_id: str, call: ToolCall) -> None:
         task = session.scalar(select(Task).where(Task.run_id == run_id, Task.task_key == task_key))
         if task is None:
             raise ValueError("tool call has no matching task")
+        run = session.get(Run, run_id)
+        enforce_tool_budget(session, run, task, BudgetLimits.from_env().tool_calls_per_task)
         if task.status == "PENDING":
             task.status = "RUNNING"
         key = tool_key(run_id, call)
@@ -155,8 +168,16 @@ def process_run(run_id: str) -> str:
         if run.cancel_requested:
             change_status(session, run, "CANCELLED")
             return "CANCELLED"
+        reason = run_budget_reason(run)
+        if reason:
+            change_status(session, run, "BLOCKED", reason)
+            return "BLOCKED"
         prompt = run.prompt
+        run.heartbeat_at = now_utc()
         change_status(session, run, "RUNNING")
+    stop_heartbeat = threading.Event()
+    heartbeat = threading.Thread(target=heartbeat_loop, args=(run_id, stop_heartbeat), daemon=True)
+    heartbeat.start()
     try:
 
         def sandbox_for(workspace, role):
@@ -186,19 +207,88 @@ def process_run(run_id: str) -> str:
         )
         with SessionLocal.begin() as session:
             run = session.scalar(select(Run).where(Run.id == run_id).with_for_update())
+            if run.status != "RUNNING":
+                return run.status
             run.report_ref = str(data_root() / "m3-runs" / run_id / "report.json")
             status = report["status"]
+            reason = run_budget_reason(run)
+            if reason and not run.cancel_requested:
+                status = "BLOCKED"
+                report["reason"] = reason
+                report["status"] = status
+                (data_root() / "m3-runs" / run_id / "report.json").write_text(
+                    json.dumps(report, indent=2), encoding="utf-8"
+                )
             if status == "COMPLETED":
                 repo = data_root() / "m3-runs" / run_id / "repo"
                 save_source_artifact(session, run_id, repo)
                 append_event(session, run_id, "artifact.ready", {"path": "source.zip"})
             change_status(session, run, status, report.get("reason"))
         return status
+    except BudgetExceeded as exc:
+        with SessionLocal.begin() as session:
+            run = session.scalar(select(Run).where(Run.id == run_id).with_for_update())
+            change_status(session, run, "BLOCKED", str(exc))
+        return "BLOCKED"
     except Exception as exc:
         with SessionLocal.begin() as session:
             run = session.scalar(select(Run).where(Run.id == run_id).with_for_update())
-            change_status(session, run, "FAILED", type(exc).__name__)
+            if run.status == "RUNNING":
+                change_status(session, run, "FAILED", type(exc).__name__)
         raise
+    finally:
+        stop_heartbeat.set()
+        heartbeat.join(timeout=2)
+
+
+def heartbeat_loop(run_id: str, stop: threading.Event) -> None:
+    while not stop.wait(5):
+        try:
+            with SessionLocal.begin() as session:
+                run = session.get(Run, run_id)
+                if run is None or run.status != "RUNNING":
+                    return
+                run.heartbeat_at = now_utc()
+        except Exception:
+            return
+
+
+def recover_stale_runs(stale_seconds: int = 30) -> list[str]:
+    """Block abandoned runs; never replay uncertain tool side effects."""
+    recovered = []
+    now = now_utc()
+    with SessionLocal.begin() as session:
+        runs = session.scalars(
+            select(Run).where(Run.status == "RUNNING").limit(100).with_for_update(skip_locked=True)
+        ).all()
+        for run in runs:
+            last = run.heartbeat_at or run.updated_at
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            if (now - last).total_seconds() < stale_seconds:
+                continue
+            tasks = session.scalars(select(Task.id).where(Task.run_id == run.id)).all()
+            for call in session.scalars(
+                select(ToolCallRecord)
+                .join(AgentExecution)
+                .where(AgentExecution.task_id.in_(tasks), ToolCallRecord.status == "STARTED")
+            ):
+                call.status = "UNKNOWN"
+            run.cancel_requested = True
+            change_status(
+                session, run, "BLOCKED", "worker heartbeat expired; reconcile tool side effects"
+            )
+            recovered.append(run.id)
+    return recovered
+
+
+def recover_created_runs(client: redis.Redis) -> int:
+    """Requeue runs whose API-to-Redis handoff may have failed."""
+    with SessionLocal() as session:
+        ids = session.scalars(select(Run.id).where(Run.status == "CREATED").limit(100)).all()
+    for run_id in ids:
+        client.lpush(QUEUE, run_id)
+    return len(ids)
 
 
 def recover_processing(client: redis.Redis) -> None:
@@ -209,7 +299,10 @@ def recover_processing(client: redis.Redis) -> None:
 
 def run_worker(once: bool = False) -> None:
     client = redis_client()
+    recover_stale_runs(positive_int("WORKER_STALE_SECONDS", 30))
     recover_processing(client)
+    if client.llen(QUEUE) == 0:
+        recover_created_runs(client)
     try:
         while True:
             publish_outbox(client)
@@ -217,10 +310,14 @@ def run_worker(once: bool = False) -> None:
             if item is None:
                 if once:
                     return
+                recover_stale_runs(positive_int("WORKER_STALE_SECONDS", 30))
+                recover_created_runs(client)
                 continue
             run_id = item.decode("utf-8")
             try:
                 process_run(run_id)
+            except Exception as exc:
+                print(f"worker run {run_id} failed: {type(exc).__name__}")
             finally:
                 client.lrem(PROCESSING, 1, item)
                 publish_outbox(client)

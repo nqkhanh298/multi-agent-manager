@@ -35,6 +35,9 @@ export interface Run {
   created_at: string
   updated_at: string
   report_ref: string | null
+  budget_usd?: number
+  spent_usd?: number
+  max_seconds?: number
 }
 
 export interface Task {
@@ -44,6 +47,10 @@ export interface Task {
   status: TaskStatus
   depends_on: string[]
   workspace_ref: string | null
+  duration_ms?: number | null
+  input_tokens?: number
+  output_tokens?: number
+  cost_usd?: number
 }
 
 export interface RunEvent {

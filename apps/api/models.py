@@ -3,7 +3,17 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -50,6 +60,10 @@ class Run(Base):
     pause_requested: Mapped[bool] = mapped_column(default=False)
     cancel_requested: Mapped[bool] = mapped_column(default=False)
     report_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
+    budget_usd: Mapped[float] = mapped_column(Float, default=5.0)
+    spent_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    max_seconds: Mapped[int] = mapped_column(Integer, default=1800)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
@@ -78,6 +92,9 @@ class AgentExecution(Base):
     model: Mapped[str] = mapped_column(String(100), default="mock")
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
 
 
 class ToolCallRecord(Base):

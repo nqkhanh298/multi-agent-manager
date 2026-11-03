@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 
 import redis
@@ -17,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from coding_platform.m3 import MockM3Coordinator
 
+from .budget import BudgetLimits
 from .db import SessionLocal, get_session
 from .models import (
     AgentExecution,
@@ -39,7 +41,7 @@ from .service import (
     owned_run,
 )
 
-app = FastAPI(title="AI Coding Platform API", version="0.4.0")
+app = FastAPI(title="AI Coding Platform API", version="0.6.0")
 bearer = HTTPBearer(auto_error=False)
 
 
@@ -94,7 +96,10 @@ def run_payload(run: Run) -> dict:
         "version": run.version,
         "created_at": run.created_at,
         "updated_at": run.updated_at,
-        "report_ref": run.report_ref,
+        "report_ref": f"/api/runs/{run.id}/report" if run.report_ref else None,
+        "budget_usd": run.budget_usd,
+        "spent_usd": run.spent_usd,
+        "max_seconds": run.max_seconds,
     }
 
 
@@ -143,7 +148,14 @@ def create_run(
     if owned_project(session, project_id, user) is None:
         raise HTTPException(404, "project not found")
     plan = MockM3Coordinator().create_plan(body.prompt)
-    run = Run(project_id=project_id, prompt=body.prompt)
+    limits = BudgetLimits.from_env()
+    run = Run(
+        project_id=project_id,
+        prompt=body.prompt,
+        budget_usd=limits.usd,
+        spent_usd=0.0,
+        max_seconds=limits.seconds,
+    )
     session.add(run)
     session.flush()
     for spec in plan.tasks:
@@ -192,6 +204,24 @@ def list_tasks(
     if owned_run(session, run_id, user) is None:
         raise HTTPException(404, "run not found")
     tasks = session.scalars(select(Task).where(Task.run_id == run_id).order_by(Task.task_key)).all()
+    executions = {
+        execution.task_id: execution
+        for execution in session.scalars(
+            select(AgentExecution).where(AgentExecution.task_id.in_([task.id for task in tasks]))
+        )
+    }
+
+    def duration_ms(execution: AgentExecution | None) -> int | None:
+        if execution is None:
+            return None
+        started = execution.started_at
+        ended = execution.ended_at or datetime.now(timezone.utc)
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        if ended.tzinfo is None:
+            ended = ended.replace(tzinfo=timezone.utc)
+        return max(0, int((ended - started).total_seconds() * 1000))
+
     return [
         {
             "id": task.task_key,
@@ -199,7 +229,11 @@ def list_tasks(
             "agent_role": task.agent_role,
             "status": task.status,
             "depends_on": task.dependencies,
-            "workspace_ref": task.workspace_ref,
+            "workspace_ref": None,
+            "duration_ms": duration_ms(executions.get(task.id)),
+            "input_tokens": executions[task.id].input_tokens if task.id in executions else 0,
+            "output_tokens": executions[task.id].output_tokens if task.id in executions else 0,
+            "cost_usd": executions[task.id].cost_usd if task.id in executions else 0.0,
         }
         for task in tasks
     ]
@@ -457,6 +491,17 @@ def decide_approval(
         raise HTTPException(409, "approval already decided")
     from .models import now_utc
 
+    if body.decision == "approve" and approval.action == "increase_budget":
+        amount = approval.payload.get("usd")
+        if (
+            isinstance(amount, bool)
+            or not isinstance(amount, (int, float))
+            or not 0 < amount <= 100
+        ):
+            raise HTTPException(422, "invalid budget increase")
+        run = session.get(Run, approval.run_id)
+        run.budget_usd += float(amount)
+        append_event(session, run.id, "run.budget_increased", {"usd": amount})
     approval.status = "APPROVED" if body.decision == "approve" else "REJECTED"
     approval.decided_at = now_utc()
     append_event(session, approval.run_id, "approval.decided", {"decision": body.decision})
