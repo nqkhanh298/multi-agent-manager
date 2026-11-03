@@ -1,9 +1,10 @@
-# Multi-Agent AI Coding Platform — M1
+# Multi-Agent AI Coding Platform — M1 and M2
 
-This repository contains the first verified vertical slice described in
-`MULTI_AGENT_CODING_PLATFORM_WINDOWS.md`: one tool-using coding agent, an offline
-mock provider, and a Docker sandbox that writes a Python calculator and runs pytest.
-It is not yet the full multi-agent platform or the dashboard.
+This repository contains the first two verified vertical slices described in
+`MULTI_AGENT_CODING_PLATFORM_WINDOWS.md`. M1 runs one tool-using coding agent in
+Docker. M2 adds a validated task DAG, Coordinator, QA, a bounded repair loop and
+durable local LangGraph checkpoints. It is not yet the full parallel platform or
+the dashboard.
 
 ## Requirements
 
@@ -28,7 +29,35 @@ ruff check .
 ruff format --check .
 python -m coding_platform.cli demo
 python -m scripts.verify_m1_sandbox
+python -m coding_platform.cli m2-demo
 ```
+
+`requirements.lock` records the exact resolved dependency versions from the
+verified Ubuntu environment. For a reproducible reinstall, install it first,
+then run `pip install -e . --no-deps`.
+
+The M2 demo deliberately writes a faulty `divide` function. QA first reports
+one failed test; the Developer repairs the file and QA then reports three passed
+tests. `--max-retries 0` demonstrates a blocked run without repair.
+
+To demonstrate checkpoint recovery across separate processes:
+
+```bash
+python -m coding_platform.cli m2-demo --pause-after implement
+python -m coding_platform.cli m2-resume --run-id <id-from-first-command>
+```
+
+M2 stores LangGraph checkpoints and an idempotent tool-call journal in
+`.local/runs/<run-id>/`. A tool call left in an uncertain `started` state blocks
+automatic replay pending reconciliation. SQLite is the local development store;
+the platform backend milestone will move durable state to PostgreSQL.
+
+To use live model planning and coding, set `OPENAI_API_KEY` and run
+`python -m coding_platform.cli m2-demo --provider openai --model "$LLM_MODEL"`.
+This makes billable requests. The fixed calculator workflow accepts only a
+`T1 backend_dev -> T2 qa` plan; general DAG scheduling belongs to M3.
+The adapter uses [OpenAI structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs)
+and the local workflow uses [LangGraph checkpoints](https://docs.langchain.com/oss/python/langgraph/checkpointers).
 
 For a real model, set `OPENAI_API_KEY` in the WSL process environment, choose a
 tool-capable model in `LLM_MODEL`, then run
@@ -54,10 +83,13 @@ and pytest run inside the container. The manager refuses to start on Windows.
   needs an API key and a billable sandbox run for end-to-end verification.
 - Docker Desktop/WSL2 is suitable for a local demo, not a strong production
   isolation boundary for hostile multi-tenant workloads.
-- There is no database, checkpointing, scheduler, API or UI yet. Those are later milestones.
-- The current audit log is local JSONL and is not crash-safe/idempotent for
-  side effects. Durable tool-call storage is planned for later milestones.
+- M2 uses deterministic mock agents for its repeatable fail/repair benchmark.
+  The live model path is wired and unit tested with simulated responses, but
+  has not made a billable API request.
+- There is no parallel scheduler, API or UI yet. Those are later milestones.
+- M1 audit remains JSONL. M2 adds a durable SQLite tool journal but deliberately
+  blocks uncertain side effects rather than guessing whether they completed.
 
 ## Test evidence
 
-See `docs/m1-report.md` for the latest environment check and test results.
+See `docs/m1-report.md` and `docs/m2-report.md` for evidence and limitations.

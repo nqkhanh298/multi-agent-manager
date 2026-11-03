@@ -10,13 +10,41 @@ from .sandbox import DockerSandbox, SandboxUnavailable
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="M1 sandboxed calculator benchmark")
-    parser.add_argument("demo", choices=["demo"])
+    parser = argparse.ArgumentParser(description="Sandboxed coding benchmarks")
+    parser.add_argument("command", choices=["demo", "m2-demo", "m2-resume"])
     parser.add_argument("--root", type=Path, default=Path(".local"))
+    parser.add_argument("--run-id")
+    parser.add_argument("--pause-after", choices=["implement", "qa"])
+    parser.add_argument("--max-retries", type=int, default=int(os.getenv("MAX_TASK_RETRIES", "3")))
     parser.add_argument("--provider", choices=["mock", "openai"], default="mock")
     parser.add_argument("--model", default=os.getenv("LLM_MODEL", "CONFIGURE_ME"))
     parser.add_argument("--prompt", default="Build a Python calculator and run pytest")
     args = parser.parse_args()
+    if args.command in {"m2-demo", "m2-resume"}:
+        from .m2 import M2Runner, concise_result
+
+        if args.provider == "openai":
+            from .m2_openai import OpenAICoordinator, OpenAIDeveloper, OpenAIJSONClient
+
+            client = OpenAIJSONClient(args.model)
+            runner = M2Runner(
+                args.root,
+                max_retries=args.max_retries,
+                coordinator=OpenAICoordinator(client),
+                developer=OpenAIDeveloper(client),
+            )
+        else:
+            runner = M2Runner(args.root, max_retries=args.max_retries)
+        if args.command == "m2-resume":
+            if not args.run_id:
+                parser.error("m2-resume requires --run-id")
+            state = runner.resume(args.run_id)
+        else:
+            state = runner.run(
+                args.prompt, interrupt_after=[args.pause_after] if args.pause_after else None
+            )
+        print(concise_result(state))
+        return 0 if state["status"] == "COMPLETED" or args.pause_after else 1
     run_id = str(uuid.uuid4())
     workspace = args.root / "workspaces" / run_id
     workspace.mkdir(parents=True, exist_ok=False)
