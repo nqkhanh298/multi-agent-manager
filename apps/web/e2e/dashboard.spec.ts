@@ -1,0 +1,105 @@
+import { expect, test, type Page } from '@playwright/test'
+
+type MockRun = { id: string; project_id: string; prompt: string; status: string; version: number; created_at: string; updated_at: string; report_ref: null }
+
+async function mockPlatform(page: Page) {
+  const projects = [{ id: 'p1', name: 'Task Management', description: '', created_at: '2026-11-04T00:00:00Z' }]
+  const runs: MockRun[] = [{ id: 'r1', project_id: 'p1', prompt: 'Xây ứng dụng quản lý công việc', status: 'RUNNING', version: 1, created_at: '2026-11-04T00:00:00Z', updated_at: '2026-11-04T00:00:00Z', report_ref: null }]
+  const tasks = [
+    { id: 'T1', title: 'Build task backend', agent_role: 'backend_dev', status: 'COMPLETED', depends_on: [], workspace_ref: null },
+    { id: 'T2', title: 'Build task frontend', agent_role: 'frontend_dev', status: 'RUNNING', depends_on: [], workspace_ref: null },
+    { id: 'T3', title: 'Run integration QA', agent_role: 'qa', status: 'PENDING', depends_on: ['T1', 'T2'], workspace_ref: null },
+  ]
+  const approvals = [{ id: 'a1', action: 'increase_budget', payload: { usd: 1 }, status: 'PENDING' }]
+  const events = [{ event_id: 'e1', run_id: 'r1', sequence: 1, type: 'run.created', payload: {}, timestamp: '2026-11-04T00:00:00Z' }]
+  const json = (body: unknown, status = 200) => ({ status, contentType: 'application/json', body: JSON.stringify(body) })
+  await page.addInitScript(() => sessionStorage.setItem('m5-api-token', 'test-token'))
+  await page.routeWebSocket('**/ws/**', (socket) => socket.onMessage(() => {}))
+  await page.route('**/api/**', async (route) => {
+    const request = route.request()
+    const path = new URL(request.url()).pathname
+    const method = request.method()
+    if (path === '/api/projects' && method === 'GET') return route.fulfill(json(projects))
+    if (path === '/api/projects' && method === 'POST') {
+      const project = { id: `p${projects.length + 1}`, name: request.postDataJSON().name as string, description: '', created_at: new Date().toISOString() }
+      projects.push(project)
+      return route.fulfill(json(project, 201))
+    }
+    if (/^\/api\/projects\/[^/]+\/runs$/.test(path) && method === 'GET') return route.fulfill(json(runs.filter((run) => run.project_id === path.split('/')[3])))
+    if (/^\/api\/projects\/[^/]+\/runs$/.test(path) && method === 'POST') {
+      const run: MockRun = { id: `r${runs.length + 1}`, project_id: path.split('/')[3], prompt: request.postDataJSON().prompt as string, status: 'CREATED', version: 0, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), report_ref: null }
+      runs.unshift(run)
+      return route.fulfill(json(run, 202))
+    }
+    const id = path.split('/')[3]
+    const run = runs.find((item) => item.id === id) || runs[0]
+    if (/^\/api\/runs\/[^/]+$/.test(path)) return route.fulfill(json(run))
+    if (path.endsWith('/tasks')) return route.fulfill(json(tasks))
+    if (path.endsWith('/events')) return route.fulfill(json(events))
+    if (path.endsWith('/files')) return route.fulfill(json([{ path: 'backend.py', size: 80 }, { path: 'App.jsx', size: 100 }] ))
+    if (path.endsWith('/files/backend.py')) return route.fulfill(json({ path: 'backend.py', content: 'def create_task(title):\n    return {"title": title}\n' }))
+    if (path.endsWith('/files/App.jsx')) return route.fulfill(json({ path: 'App.jsx', content: 'export default function App() { return <h1>Tasks</h1> }' }))
+    if (path.endsWith('/diff')) return route.fulfill(json({ path: 'backend.py', diff: '--- a/backend.py\n+++ b/backend.py\n@@ -0,0 +1 @@\n+def create_task(title):' }))
+    if (path.endsWith('/report')) return route.fulfill(json({ status: 'RUNNING', parallel_overlap_ms: 1000, tasks: [{ task_id: 'T1', status: 'COMPLETED', test_stdout: '2 passed', reason: '' }], merges: [], integration: { stdout: '4 passed', exit_code: 0 } }))
+    if (path.endsWith('/artifacts')) return route.fulfill(json([{ id: 'z1', path: 'source.zip', sha256: 'abc', size: 120 }]))
+    if (path.endsWith('/approvals')) return route.fulfill(json(approvals))
+    if (path.endsWith('/download')) return route.fulfill({ status: 200, headers: { 'Content-Type': 'application/zip', 'Content-Disposition': 'attachment; filename="source.zip"' }, body: 'PK\u0003\u0004' })
+    if (method === 'POST' && path.endsWith('/pause')) { run.status = 'PAUSED'; return route.fulfill(json(run)) }
+    if (method === 'POST' && path.endsWith('/resume')) { run.status = 'CREATED'; return route.fulfill(json(run)) }
+    if (method === 'POST' && path.endsWith('/cancel')) { run.status = 'CANCELLED'; return route.fulfill(json(run)) }
+    if (method === 'POST' && path.includes('/approvals/')) { approvals[0].status = 'APPROVED'; return route.fulfill(json({ id: 'a1', status: 'APPROVED' })) }
+    return route.fulfill(json([]))
+  })
+}
+
+test('shows task graph, progress, code and test output from API data', async ({ page }) => {
+  await mockPlatform(page)
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'Task Management' })).toBeVisible()
+  await expect(page.getByText('Backend Dev').first()).toBeVisible()
+  await expect(page.getByText('Frontend Dev').first()).toBeVisible()
+  await expect(page.getByText('33%').first()).toBeVisible()
+  await page.getByRole('tab', { name: /Diff/ }).click()
+  await expect(page.locator('.diff-add')).toContainText('def create_task')
+  await page.getByRole('tab', { name: /Tests/ }).click()
+  await expect(page.locator('.terminal-output')).toContainText('4 passed')
+  await page.getByRole('tab', { name: /Events/ }).click()
+  await expect(page.locator('.event-log .event-type')).toContainText('run.created')
+})
+
+test('creates a run and controls its lifecycle', async ({ page }) => {
+  await mockPlatform(page)
+  await page.goto('/')
+  await page.getByLabel('Bạn muốn hệ thống xây gì?').fill('Ứng dụng mới')
+  await page.getByRole('button', { name: /Bắt đầu chạy/ }).click()
+  await expect(page.getByText('Ứng dụng mới').first()).toBeVisible()
+  await page.getByRole('button', { name: /Tạm dừng/ }).click()
+  await expect(page.getByText('Tạm dừng', { exact: true }).last()).toBeVisible()
+  await page.getByRole('button', { name: /Tiếp tục/ }).click()
+  await page.getByRole('button', { name: /Hủy/ }).click()
+  await expect(page.getByText('Đã hủy').first()).toBeVisible()
+  const download = page.waitForEvent('download')
+  await page.getByRole('button', { name: /Tải mã nguồn/ }).click()
+  expect((await download).suggestedFilename()).toContain('source.zip')
+})
+
+test('requires a deliberate approval decision', async ({ page }) => {
+  await mockPlatform(page)
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Yêu cầu phê duyệt' }).click()
+  await expect(page.getByRole('dialog', { name: 'Yêu cầu phê duyệt' })).toBeVisible()
+  await expect(page.getByText('increase_budget')).toBeVisible()
+  await page.getByRole('button', { name: 'Phê duyệt', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: 'Yêu cầu phê duyệt' })).toBeHidden()
+})
+
+test('keeps project creation available on a narrow screen', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await mockPlatform(page)
+  await page.goto('/')
+  await expect(page.getByRole('combobox', { name: 'Chọn dự án' })).toBeVisible()
+  await page.getByRole('button', { name: 'Tạo dự án' }).click()
+  await page.getByRole('textbox', { name: 'Tên dự án mới trên điện thoại' }).fill('Mobile app')
+  await page.getByRole('button', { name: 'Tạo', exact: true }).click()
+  await expect(page.getByRole('combobox', { name: 'Chọn dự án' })).toHaveValue('p2')
+})

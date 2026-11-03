@@ -95,6 +95,8 @@ def record_tool_start(run_id: str, call: ToolCall) -> None:
         task = session.scalar(select(Task).where(Task.run_id == run_id, Task.task_key == task_key))
         if task is None:
             raise ValueError("tool call has no matching task")
+        if task.status == "PENDING":
+            task.status = "RUNNING"
         key = tool_key(run_id, call)
         if session.scalar(select(ToolCallRecord.id).where(ToolCallRecord.idempotency_key == key)):
             raise RuntimeError("tool call was already started; reconcile before replay")

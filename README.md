@@ -1,19 +1,20 @@
-# Multi-Agent AI Coding Platform — M1 to M4
+# Multi-Agent AI Coding Platform — M1 to M5
 
-This repository contains the first four verified vertical slices described in
+This repository contains the first five verified vertical slices described in
 `MULTI_AGENT_CODING_PLATFORM_WINDOWS.md`. M1 runs one tool-using coding agent in
 Docker. M2 adds a validated task DAG, Coordinator, QA, a bounded repair loop and
 durable local LangGraph checkpoints. M3 schedules independent backend and React
 frontend tasks in separate Git worktrees, merges them in order, and runs
 integration QA. M4 adds a PostgreSQL-backed FastAPI control plane, Redis worker
-queue, event stream, run controls and artifact downloads. The visual dashboard
-belongs to M5.
+queue, event stream, run controls and artifact downloads. M5 adds a React
+dashboard with a live workflow graph, code and diff viewers, event and test
+output, approval decisions and browser tests.
 
 ## Requirements
 
 - Windows 11 with WSL2 Ubuntu and Docker Desktop configured for Linux containers.
 - Run the repository from the WSL Linux filesystem, for example `~/projects/ai-coding-platform`.
-- Python 3.11+ in WSL. The host-side unit tests also work on Python 3.9.
+- Python 3.11+ in WSL. Node.js 20.19+ and npm are required for the M5 dashboard.
 - Docker daemon accessible from WSL. Do not run the agent on the Windows host.
 
 ## Build and run in WSL
@@ -97,7 +98,40 @@ the script processes its own queued jobs.
 
 M4 data is stored in PostgreSQL and `.local/platform/`. Only the API and worker
 have database credentials; generated code runs in network-disabled Docker
-sandboxes. The API explorer is not the M5 dashboard.
+sandboxes.
+
+## M5 visual dashboard on Windows
+
+Keep the M4 API and worker running in WSL. In a Windows terminal at the repository
+root, run:
+
+```powershell
+cd apps/web
+npm ci
+npm run dev
+```
+
+Open `http://localhost:5173/`. Paste the local API token printed by
+`python -m apps.api.bootstrap --name local`. On this development machine the
+token is also saved in WSL; retrieve it with:
+
+```powershell
+wsl -d Ubuntu -- bash -lc 'cat ~/projects/ai-coding-platform/.local/platform/local-api-token.txt'
+```
+
+Create a project, enter a prompt and start a run. The current worker executes
+the fixed M3 Task Manager workflow regardless of prompt; the dashboard labels
+this behavior. Its graph, statuses, events, source files, Git diff, test output,
+and source ZIP are fetched from the M4 API. The editor and event/terminal views
+are read-only. WebSocket events replay after reconnect; REST polling fills in
+state when the socket is unavailable. Approval controls appear when the API has
+a pending approval.
+
+To verify the frontend, run `npm run build`, `npm run test`, and
+`npm run test:e2e` from `apps/web`. Playwright uses local Chrome on Windows.
+The optional live browser case requires `M5_LIVE_TOKEN` and the running M4
+services; without it, that case is skipped. See `docs/m5-report.md` for the
+verified local run and remaining limits.
 
 To use live model planning and coding, set `OPENAI_API_KEY` and run
 `python -m coding_platform.cli m2-demo --provider openai --model "$LLM_MODEL"`.
@@ -134,12 +168,15 @@ and pytest run inside the container. The manager refuses to start on Windows.
   The live model path is wired and unit tested with simulated responses, but
   has not made a billable API request.
 - M3 provides local DAG scheduling and merge verification. M4 exposes this
-  fixed mock workflow through an API and worker; the visual dashboard and a
-  general live-model workflow belong to later work.
+  fixed mock workflow through an API and worker; M5 visualizes it. A general
+  live-model workflow remains future work.
+- M4 does not record per-agent token usage or duration, so M5 does not invent
+  these values. The approval UI is verified with a browser fixture; the fixed
+  benchmark does not create an approval request on its own.
 - M1 audit remains JSONL. M2 adds a durable SQLite tool journal but deliberately
   blocks uncertain side effects rather than guessing whether they completed.
 
 ## Test evidence
 
-See `docs/m1-report.md`, `docs/m2-report.md`, `docs/m3-report.md`, and
-`docs/m4-report.md` for evidence and limitations.
+See `docs/m1-report.md`, `docs/m2-report.md`, `docs/m3-report.md`,
+`docs/m4-report.md`, and `docs/m5-report.md` for evidence and limitations.

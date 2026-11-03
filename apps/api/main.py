@@ -2,7 +2,9 @@
 
 import asyncio
 import hashlib
+import json
 import os
+import subprocess
 from pathlib import Path
 
 import redis
@@ -87,6 +89,7 @@ def run_payload(run: Run) -> dict:
     return {
         "id": run.id,
         "project_id": run.project_id,
+        "prompt": run.prompt,
         "status": run.status,
         "version": run.version,
         "created_at": run.created_at,
@@ -245,6 +248,146 @@ def list_tool_calls(
         }
         for call, task_key in rows
     ]
+
+
+def source_repo(run_id: str) -> Path:
+    return (data_root() / "m3-runs" / run_id / "repo").resolve()
+
+
+def visible_file(path: Path, repo: Path) -> bool:
+    relative = path.relative_to(repo)
+    return not (
+        path.is_symlink()
+        or any(part in {".git", "node_modules", "dist", "__pycache__"} for part in relative.parts)
+        or path.name.startswith(".env")
+        or path.suffix in {".key", ".pem", ".pyc"}
+    )
+
+
+@app.get("/api/runs/{run_id}/files")
+def list_source_files(
+    run_id: str, session: Session = Depends(get_session), user: User = Depends(current_user)
+) -> list:
+    if owned_run(session, run_id, user) is None:
+        raise HTTPException(404, "run not found")
+    repo = source_repo(run_id)
+    if not repo.is_dir():
+        return []
+    files = []
+    for path in sorted(repo.rglob("*")):
+        if path.is_file() and visible_file(path, repo) and path.stat().st_size <= 1_000_000:
+            files.append({"path": path.relative_to(repo).as_posix(), "size": path.stat().st_size})
+        if len(files) >= 300:
+            break
+    return files
+
+
+@app.get("/api/runs/{run_id}/files/{file_path:path}")
+def read_source_file(
+    run_id: str,
+    file_path: str,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+) -> dict:
+    if owned_run(session, run_id, user) is None:
+        raise HTTPException(404, "run not found")
+    repo = source_repo(run_id)
+    target = (repo / file_path).resolve()
+    if (
+        not target.is_relative_to(repo)
+        or not target.is_file()
+        or not visible_file(target, repo)
+        or target.stat().st_size > 1_000_000
+    ):
+        raise HTTPException(404, "file not found")
+    try:
+        content = target.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(415, "file is not UTF-8 text") from exc
+    return {"path": target.relative_to(repo).as_posix(), "content": content}
+
+
+@app.get("/api/runs/{run_id}/diff")
+def get_source_diff(
+    run_id: str,
+    path: str,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+) -> dict:
+    if owned_run(session, run_id, user) is None:
+        raise HTTPException(404, "run not found")
+    repo = source_repo(run_id)
+    target = (repo / path).resolve()
+    if (
+        not target.is_relative_to(repo)
+        or not target.is_file()
+        or not visible_file(target, repo)
+        or target.stat().st_size > 1_000_000
+    ):
+        raise HTTPException(404, "file not found")
+    relative = target.relative_to(repo).as_posix()
+    try:
+        roots = subprocess.run(
+            ["git", "-C", str(repo), "rev-list", "--max-parents=0", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+        if roots.returncode != 0 or not roots.stdout.strip():
+            return {"path": relative, "diff": ""}
+        first_commit = roots.stdout.splitlines()[0]
+        result = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repo),
+                "diff",
+                "--no-ext-diff",
+                "--no-color",
+                first_commit,
+                "HEAD",
+                "--",
+                relative,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return {"path": relative, "diff": ""}
+    return {"path": relative, "diff": result.stdout[:100_000] if result.returncode == 0 else ""}
+
+
+@app.get("/api/runs/{run_id}/report")
+def get_report(
+    run_id: str, session: Session = Depends(get_session), user: User = Depends(current_user)
+) -> dict:
+    if owned_run(session, run_id, user) is None:
+        raise HTTPException(404, "run not found")
+    report_path = data_root() / "m3-runs" / run_id / "report.json"
+    if not report_path.is_file():
+        raise HTTPException(404, "report not ready")
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    return {
+        "status": report["status"],
+        "parallel_overlap_ms": report.get("parallel_overlap_ms", 0),
+        "tasks": [
+            {
+                "task_id": item["task_id"],
+                "status": item["status"],
+                "test_stdout": item.get("test_stdout", "")[:8000],
+                "reason": item.get("reason", "")[:1000],
+            }
+            for item in report.get("tasks", [])
+        ],
+        "merges": report.get("merges", []),
+        "integration": {
+            key: value[:8000] if isinstance(value, str) else value
+            for key, value in (report.get("integration") or {}).items()
+        },
+    }
 
 
 @app.post("/api/runs/{run_id}/pause")
