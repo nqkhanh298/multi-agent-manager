@@ -29,7 +29,7 @@ def test_empty_title():
     with pytest.raises(ValueError):
         create_task(" ")
 """
-FRONTEND_APP = """import { useState } from 'react';
+FRONTEND_APP = """import React, { useState } from 'react';
 
 export default function App() {
   const [tasks, setTasks] = useState([]);
@@ -121,7 +121,7 @@ class MockM3Coordinator:
                         "title": "Build task frontend",
                         "agent": "frontend_dev",
                         "depends_on": [],
-                        "acceptance_criteria": ["React production build passes"],
+                        "acceptance_criteria": ["React build and render smoke pass"],
                     },
                     {
                         "id": "T3",

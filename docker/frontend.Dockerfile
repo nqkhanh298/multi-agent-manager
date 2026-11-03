@@ -5,5 +5,6 @@ WORKDIR /opt/m3
 COPY docker/frontend/package.json docker/frontend/package-lock.json ./
 RUN npm ci
 COPY docker/frontend/build.sh /opt/m3/build.sh
+COPY docker/frontend/verify-render.mjs /opt/m3/verify-render.mjs
 COPY docker/sandbox_entrypoint.py /opt/sandbox/entrypoint.py
 ENTRYPOINT ["python3", "/opt/sandbox/entrypoint.py"]

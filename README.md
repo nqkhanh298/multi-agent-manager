@@ -57,8 +57,10 @@ the platform backend milestone will move durable state to PostgreSQL.
 
 The M3 demo uses deterministic agents to create a Python task backend and a
 React/Vite frontend. Independent tasks execute concurrently in separate Git
-worktrees, each with its own sandbox check. Completed branches merge into an
-integration branch one at a time. QA rebuilds the merged frontend and runs the
+worktrees, each with its own sandbox check. The frontend build also renders the
+app to HTML to catch runtime errors that a successful bundle alone can miss.
+Completed branches merge into an integration branch one at a time. QA rebuilds
+the merged frontend and runs the
 Python integration suite. The CLI prints a report whose run directory is
 `.local/m3-runs/<run-id>/`; `report.json` records task status, worktrees, merge
 commits, parallel overlap, and integration output. Use `--max-parallel 1` to
