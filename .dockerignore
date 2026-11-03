@@ -1,0 +1,10 @@
+.git
+.local
+.venv
+__pycache__
+*.pyc
+.env
+.vscode
+*.pdf
+
+\n

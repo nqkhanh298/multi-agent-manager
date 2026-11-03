@@ -1,0 +1,6 @@
+*.py text eol=lf
+*.toml text eol=lf
+*.Dockerfile text eol=lf
+.dockerignore text eol=lf
+.gitignore text eol=lf
+.env.example text eol=lf
