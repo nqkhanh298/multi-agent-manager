@@ -164,12 +164,22 @@ test('shows a coordinator-selected research team and report preview', async ({ p
   } }))
   await page.route('**/api/runs/r1/files', (route) => route.fulfill({ json: [{ path: 'REPORT.md', size: 55 }] }))
   await page.route('**/api/runs/r1/files/REPORT.md', (route) => route.fulfill({ json: {
-    path: 'REPORT.md', content: '# Research report\n\n## Findings\nThe result is documented.',
+    path: 'REPORT.md', content: '# Research report\n\n## Findings\nThe result is documented.\n\n- First finding\n- Second finding\n\n| Topic | Result |\n| --- | --- |\n| Test | Passed |\n\n`example()`\n\n<script>alert(1)</script>',
   } }))
   await page.goto('/')
   await expect(page.locator('.workflow-panel .react-flow__node')).toHaveCount(5)
   await page.getByRole('tab', { name: 'Preview' }).click()
   await expect(page.locator('.report-preview')).toContainText('The result is documented.')
+  await expect(page.locator('.report-document h1')).toHaveText('Research report')
+  await expect(page.locator('.report-document h2')).toHaveText('Findings')
+  await expect(page.locator('.report-document li')).toHaveCount(2)
+  await expect(page.locator('.report-document table td').first()).toHaveText('Test')
+  await expect(page.locator('.report-document code')).toContainText('example()')
+  await expect(page.locator('.report-document script')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Xem Markdown gốc' }).click()
+  await expect(page.locator('.report-source')).toContainText('# Research report')
+  await page.getByRole('button', { name: 'Xem bản đọc' }).click()
+  await expect(page.locator('.report-document h1')).toHaveText('Research report')
   await expect(page.getByRole('button', { name: 'Tải báo cáo' })).toBeEnabled()
 })
 

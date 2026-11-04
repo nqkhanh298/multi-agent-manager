@@ -110,9 +110,35 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .reference-evidence { margin-top: 8px; padding: 8px; border-left: 2px solid #56d4a1; background: #172744; color: #dbe7f8; font-size: 11px; }
 .reference-evidence p { margin: 5px 0; }
 .reference-failure { margin: 10px 14px; padding: 9px; border: 1px solid #a75269; border-radius: 6px; color: #ffb7c5; background: #3c2038; font-size: 11px; }
-.report-preview { height: 100%; overflow: auto; padding: 20px; color: #e8efff; background: #10192e; }
-.report-preview-heading { display: flex; align-items: center; gap: 9px; margin-bottom: 16px; color: #b8adff; }
-.report-preview pre { max-width: 900px; margin: 0 auto; padding: 26px; border: 1px solid #39466b; border-radius: 10px; background: #17223c; white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.7 Inter, system-ui, sans-serif; }
+.report-preview { flex: 1; min-height: 0; overflow: auto; padding: 20px; color: #e8efff; background: #10192e; }
+.report-preview-heading { max-width: 940px; margin: 0 auto 14px; display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #b8adff; }
+.report-preview-heading > div { display: flex; align-items: center; gap: 9px; }
+.report-preview-heading button { padding: 6px 10px; border: 1px solid #45557e; border-radius: 7px; background: #1a2847; color: #dce5ff; font: inherit; font-size: 11px; cursor: pointer; }
+.report-preview-heading button:hover { border-color: #9b8cff; }
+.report-document, .report-source { max-width: 940px; margin: 0 auto; padding: clamp(20px, 4vw, 42px); border: 1px solid #39466b; border-radius: 12px; background: #17223c; }
+.report-document { font-size: 14px; line-height: 1.75; overflow-wrap: anywhere; }
+.report-document > :first-child { margin-top: 0; }
+.report-document > :last-child { margin-bottom: 0; }
+.report-document h1, .report-document h2, .report-document h3, .report-document h4 { color: #f3f5ff; line-height: 1.35; letter-spacing: -.02em; }
+.report-document h1 { font-size: 25px; margin: 0 0 20px; padding-bottom: 13px; border-bottom: 1px solid #425176; }
+.report-document h2 { font-size: 19px; margin: 30px 0 12px; padding-bottom: 7px; border-bottom: 1px solid #354260; }
+.report-document h3 { font-size: 16px; margin: 24px 0 10px; }
+.report-document p, .report-document ul, .report-document ol, .report-document blockquote, .report-document table, .report-document pre { margin: 0 0 16px; }
+.report-document ul, .report-document ol { padding-left: 24px; }
+.report-document li + li { margin-top: 5px; }
+.report-document li::marker { color: #ac9eff; }
+.report-document a { color: #9dccff; text-decoration: underline; text-underline-offset: 3px; }
+.report-document a:hover { color: #d3e8ff; }
+.report-document blockquote { padding: 3px 0 3px 16px; border-left: 3px solid #9b8cff; color: #b8c8e7; }
+.report-document hr { border: 0; border-top: 1px solid #425176; margin: 24px 0; }
+.report-document code { padding: 2px 5px; border-radius: 4px; background: #0d172b; color: #c8e2ff; font: .9em/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.report-document pre { overflow-x: auto; padding: 16px; border: 1px solid #34415f; border-radius: 8px; background: #0d172b; }
+.report-document pre code { padding: 0; background: none; color: #dceaff; font-size: 12px; }
+.report-document table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: 13px; }
+.report-document th, .report-document td { padding: 9px 12px; border: 1px solid #425176; text-align: left; white-space: normal; }
+.report-document th { background: #263657; color: #f1f3ff; }
+.report-document tr:nth-child(even) { background: #1c2a47; }
+.report-source { overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.7 ui-monospace, SFMono-Regular, Consolas, monospace; }
 .primary-button { border: 1px solid #8f74ff; background: linear-gradient(135deg, #7561fc, #5135db); box-shadow: 0 5px 14px #4935ba50; color: #fff; font-weight: 700; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 15px; white-space: nowrap; font-size: 11px; }
 .primary-button:hover:not(:disabled) { filter: brightness(1.13); }
 .metrics-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 11px; margin-bottom: 15px; }
