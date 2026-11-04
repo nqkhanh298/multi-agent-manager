@@ -5,6 +5,15 @@ __pycache__/
 .ruff_cache/
 .local/
 *.pyc
+*.egg-info/
+.coverage
+htmlcov/
+coverage/
+.idea/
+.vscode/
+.DS_Store
+*.log
+MULTI_AGENT_CODING_PLATFORM_WINDOWS.pdf
 apps/web/node_modules/
 apps/web/dist/
 apps/web/test-results/
