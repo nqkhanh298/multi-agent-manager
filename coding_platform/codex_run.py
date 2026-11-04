@@ -10,6 +10,12 @@ from coding_platform.codex_app_server import CodexAppServer, CodexStopped, Codex
 from coding_platform.contracts import ToolCall
 from coding_platform.sandbox import DockerSandbox, SandboxCancelled
 from coding_platform.codex_roles import default_assignments, validate_assignments
+from coding_platform.references import (
+    REFERENCE_REVIEW_SCHEMA,
+    load_references,
+    reference_brief,
+    verify_reference_review,
+)
 
 
 @dataclass(frozen=True)
@@ -136,6 +142,8 @@ class CodexRunRunner:
 
     def run(self, prompt: str, run_id: str) -> dict:
         run_dir = (self.root / "m3-runs" / run_id).resolve()
+        references = load_references(run_dir)
+        references_text = reference_brief(references)
         repo = run_dir / "repo"
         repo.mkdir(parents=True, exist_ok=True)
         if not (repo / ".git").exists():
@@ -196,6 +204,9 @@ class CodexRunRunner:
                 "integration": None,
             }
         completed = {item["task_id"] for item in report["tasks"] if item["status"] == "COMPLETED"}
+        report["references"] = [
+            {key: item[key] for key in ("id", "name", "sha256", "chars")} for item in references
+        ]
         context: dict[str, str] = {}
         for role in (
             "coordinator",
@@ -228,10 +239,18 @@ class CodexRunRunner:
                 activity: Callable[[str, str], None] | None = None,
             ) -> str:
                 assignment = self.assignments["coordinator" if role == "target_selector" else role]
+                if references:
+                    self.event(
+                        "references.injected",
+                        {
+                            "role": role,
+                            "ids": [item["id"] for item in references],
+                        },
+                    )
                 return client.run_role(
                     role,
                     skill,
-                    brief,
+                    brief + references_text,
                     agent_context,
                     output_schema=schema,
                     stop=self.control,
@@ -370,6 +389,35 @@ class CodexRunRunner:
                     context[task.agent] = answer
                     if not test.ok:
                         raise RuntimeError("generated app failed Docker tests; see test report")
+                    if references:
+                        source_names = (
+                            ("index.html", "styles.css", "app.js") if web else ("app.py",)
+                        )
+                        source = {
+                            name: (repo / name).read_text(encoding="utf-8")
+                            for name in source_names
+                            if (repo / name).is_file()
+                        }
+                        review = call_role(
+                            "qa",
+                            skill,
+                            "Check EVERY attached reference against the generated source. "
+                            "Return one check per reference ID. For each, quote exact text from "
+                            "the reference and provide an exact substring from the named source "
+                            "file that implements it. If you cannot find implementation evidence, "
+                            "return an empty evidence string. Do not invent evidence.\n\n"
+                            + "\n\n".join(
+                                f"FILE {name}:\n{content}" for name, content in source.items()
+                            ),
+                            schema=REFERENCE_REVIEW_SCHEMA,
+                            activity=activity,
+                        )
+                        report["reference_checks"] = verify_reference_review(
+                            review, references, source
+                        )
+                        self.event(
+                            "references.verified", {"ids": [item["id"] for item in references]}
+                        )
                 else:
                     answer = call_role(
                         task.agent,
@@ -428,6 +476,8 @@ class CodexRunRunner:
             json.JSONDecodeError,
         ) as exc:
             report.update(status="BLOCKED", reason=str(exc)[:1000])
+            if references and "QA" in str(exc):
+                self.event("references.review_failed", {"reason": str(exc)[:500]})
             if "task" in locals():
                 self.event("task.status", {"task_id": task.id, "status": "FAILED"})
                 report["tasks"].append(

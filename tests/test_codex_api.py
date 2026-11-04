@@ -1,5 +1,6 @@
 """Codex account state gates real runs and remains scoped to a local user."""
 
+import base64
 import json
 
 from fastapi.testclient import TestClient
@@ -71,6 +72,17 @@ def test_codex_run_requires_account_and_creates_role_tasks(monkeypatch, tmp_path
             == 409
         )
         fake.connected = True
+        invalid_reference = client.post(
+            path,
+            headers=headers,
+            json={
+                "prompt": "Make a timer",
+                "references": [
+                    {"name": "picture.png", "data_base64": base64.b64encode(b"image").decode()}
+                ],
+            },
+        )
+        assert invalid_reference.status_code == 422
         assert client.get("/api/codex/models", headers=headers).json() == {
             "models": ["gpt-6.1-sol", "gpt-6-astra"]
         }
@@ -108,10 +120,29 @@ def test_codex_run_requires_account_and_creates_role_tasks(monkeypatch, tmp_path
         assert web_response.status_code == 202
         assert web_response.json()["engine"] == "codex_web"
         assert web_response.json()["budget_usd"] is None
-        auto_response = client.post(path, headers=headers, json={"prompt": "Make a calculator"})
+        reference_text = "The calculator must print the result in the terminal."
+        auto_response = client.post(
+            path,
+            headers=headers,
+            json={
+                "prompt": "Make a calculator",
+                "references": [
+                    {
+                        "name": "requirements.md",
+                        "data_base64": base64.b64encode(reference_text.encode()).decode(),
+                    }
+                ],
+            },
+        )
         assert auto_response.status_code == 202
         assert auto_response.json()["engine"] == "codex_auto"
         auto_id = auto_response.json()["id"]
+        attached = client.get(f"/api/runs/{auto_id}/references", headers=headers)
+        assert attached.status_code == 200
+        assert attached.json()[0]["name"] == "requirements.md"
+        assert attached.json()[0]["text"] == reference_text
+        assert client.get(f"/api/runs/{auto_id}/references").status_code == 401
+        assert (tmp_path / "m3-runs" / auto_id / "references.json").is_file()
         snapshot = tmp_path / "m3-runs" / auto_id / "role-assignments.json"
         assert json.loads(snapshot.read_text())["researcher"] == assignments["researcher"]
         run_dir = tmp_path / "m3-runs" / auto_id

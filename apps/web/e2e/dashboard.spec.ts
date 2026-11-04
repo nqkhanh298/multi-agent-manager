@@ -48,6 +48,7 @@ async function mockPlatform(page: Page, connected = true) {
     const id = path.split('/')[3]
     const run = runs.find((item) => item.id === id) || runs[0]
     if (/^\/api\/runs\/[^/]+$/.test(path)) return route.fulfill(json(run))
+    if (path.endsWith('/references')) return route.fulfill(json([]))
     if (path.endsWith('/tasks')) return route.fulfill(json(tasks))
     if (path.endsWith('/events')) return route.fulfill(json(events))
     if (path.endsWith('/files')) return route.fulfill(json([{ path: 'backend.py', size: 80 }, { path: 'App.jsx', size: 100 }] ))
@@ -160,6 +161,31 @@ test('assigns a specific model to a role and saves the choice', async ({ page })
   await expect(page.getByRole('status')).toContainText('Đã lưu model Codex')
   await expect(page.locator('.role-assignment-row select')).toHaveCount(8)
   expect(saved?.coordinator).toEqual({ provider: 'codex', model: 'gpt-6.1-sol' })
+})
+
+test('attaches a reference to the prompt and shows the saved text', async ({ page }) => {
+  await mockPlatform(page)
+  let submitted: { prompt: string; references: Array<{ name: string; data_base64: string }> } | null = null
+  await page.route('**/api/projects/p1/runs', async (route) => {
+    if (route.request().method() === 'POST') submitted = route.request().postDataJSON()
+    return route.fallback()
+  })
+  await page.route('**/api/runs/r2/references', (route) => route.fulfill({ json: [{
+    id: 'ref-1', name: 'requirements.md', sha256: 'abcdef123456', chars: 29,
+    text: 'The game must have a blue button.',
+  }] }))
+  await page.goto('/')
+  await page.getByLabel('Bạn muốn hệ thống xây gì?').fill('Build a game')
+  await page.locator('#run-references').setInputFiles({
+    name: 'requirements.md', mimeType: 'text/markdown', buffer: Buffer.from('The game must have a blue button.'),
+  })
+  await expect(page.getByText('requirements.md').first()).toBeVisible()
+  await page.getByRole('button', { name: /Bắt đầu chạy/ }).click()
+  await expect(page.getByText('Tài liệu tham chiếu (1)')).toBeVisible()
+  await page.getByText('requirements.md').last().click()
+  await expect(page.getByText('The game must have a blue button.')).toBeVisible()
+  expect(submitted?.references[0].name).toBe('requirements.md')
+  expect(Buffer.from(submitted!.references[0].data_base64, 'base64').toString()).toBe('The game must have a blue button.')
 })
 
 test('keeps eight specialist stages readable in a horizontal workflow', async ({ page }) => {

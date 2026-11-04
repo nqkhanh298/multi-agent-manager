@@ -9,6 +9,8 @@ from coding_platform.codex_run import CodexRunRunner, parse_source, parse_target
 from coding_platform.codex_app_server import CodexAppServer, CodexStopped
 from coding_platform.contracts import ToolResult
 from coding_platform.codex_roles import default_assignments
+from coding_platform.references import REFERENCE_REVIEW_SCHEMA, prepare_references, save_references
+import base64
 
 
 def test_parse_source_rejects_unexpected_fields():
@@ -301,7 +303,20 @@ def test_web_source_schema_and_sandbox_target(tmp_path, monkeypatch):
     assert (tmp_path / "m3-runs/web-run/repo/index.html").is_file()
 
 
-def test_role_runner_uses_separate_codex_models_and_reports_them(tmp_path, monkeypatch):
+@pytest.mark.parametrize("valid_evidence", [True, False])
+def test_role_runner_uses_separate_codex_models_and_reports_them(
+    tmp_path, monkeypatch, valid_evidence
+):
+    run_id = "reference-valid" if valid_evidence else "reference-invalid"
+    reference = prepare_references(
+        [
+            {
+                "name": "requirements.md",
+                "data_base64": base64.b64encode(b"The application must print 'ok'.").decode(),
+            }
+        ]
+    )[0]
+    save_references(tmp_path / "m3-runs" / run_id, [reference])
     assignments = default_assignments()
     assignments["coordinator"] = {"provider": "codex", "model": "gpt-6-astra"}
     assignments["researcher"] = {"provider": "codex", "model": "gpt-6.1-sol"}
@@ -317,6 +332,22 @@ def test_role_runner_uses_separate_codex_models_and_reports_them(tmp_path, monke
 
         def run_role(self, role, *args, **kwargs):
             calls.append(("codex", role, kwargs.get("model")))
+            assert reference["id"] in args[1]
+            assert "The application must print 'ok'." in args[1]
+            if role == "qa" and kwargs.get("output_schema") == REFERENCE_REVIEW_SCHEMA:
+                return json.dumps(
+                    {
+                        "summary": "Reference is implemented",
+                        "reference_checks": [
+                            {
+                                "id": reference["id"],
+                                "quote": "print 'ok'",
+                                "file": "app.py",
+                                "evidence": "print('ok')" if valid_evidence else "print('wrong')",
+                            }
+                        ],
+                    }
+                )
             if role == "developer":
                 return json.dumps(
                     {"app_py": "print('ok')", "test_app_py": "def test_ok(): assert True"}
@@ -343,10 +374,16 @@ def test_role_runner_uses_separate_codex_models_and_reports_them(tmp_path, monke
         lambda: None,
         tmp_path / "codex-account",
         assignments=assignments,
-    ).run("Make a calculator", "codex-models-run")
-    assert report["status"] == "COMPLETED"
+    ).run("Make a calculator", run_id)
+    assert report["status"] == ("COMPLETED" if valid_evidence else "BLOCKED")
     assert ("codex", "researcher", "gpt-6.1-sol") in calls
     assert ("codex", "coordinator", "gpt-6-astra") in calls
+    if valid_evidence:
+        assert report["reference_checks"][0]["file"] == "app.py"
+        assert any(kind == "references.verified" for kind, _ in events)
+    else:
+        assert "source evidence" in report["reason"]
+        assert any(kind == "references.review_failed" for kind, _ in events)
     assert any(
         kind == "task.status"
         and payload.get("provider") == "codex"

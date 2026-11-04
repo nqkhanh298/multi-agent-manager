@@ -42,6 +42,21 @@ export interface Run {
   max_seconds?: number
 }
 
+export interface RunReference {
+  id: string
+  name: string
+  sha256: string
+  chars: number
+  text: string
+}
+
+export interface ReferenceCheck {
+  id: string
+  quote: string
+  file: string
+  evidence: string
+}
+
 export interface CodexAccount {
   connected: boolean
   email: string | null
@@ -117,8 +132,10 @@ export interface SourceContent {
 export interface RunReport {
   target?: 'web' | 'python_cli' | null
   status: string
+  reason?: string
   parallel_overlap_ms: number
   tasks: Array<{ task_id: string; status: string; test_stdout: string; reason: string }>
   merges: Array<{ task_id: string; status: string; commit?: string }>
   integration: Record<string, string | number>
+  reference_checks?: ReferenceCheck[]
 }

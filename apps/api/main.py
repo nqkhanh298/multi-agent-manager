@@ -25,6 +25,7 @@ from coding_platform.codex_run import CODEX_TASKS
 from coding_platform.contracts import ToolCall
 from coding_platform.sandbox import DockerSandbox, SandboxUnavailable
 from coding_platform.codex_roles import read_assignments, validate_assignments, write_assignments
+from coding_platform.references import load_references, prepare_references, save_references
 
 from .budget import BudgetLimits
 from .db import SessionLocal, get_session
@@ -71,6 +72,12 @@ class ProjectCreate(BaseModel):
 class RunCreate(BaseModel):
     prompt: str = Field(min_length=1, max_length=10000)
     engine: str = Field(default="codex_auto", pattern="^(demo|codex|codex_web|codex_auto)$")
+    references: list["ReferenceInput"] = Field(default_factory=list, max_length=3)
+
+
+class ReferenceInput(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    data_base64: str = Field(min_length=1, max_length=2_700_000)
 
 
 class CodexLoginRequest(BaseModel):
@@ -274,6 +281,12 @@ def create_run(
     session: Session = Depends(get_session),
     user: User = Depends(current_user),
 ) -> dict:
+    if body.references and not body.engine.startswith("codex"):
+        raise HTTPException(422, "references require a Codex run")
+    try:
+        references = prepare_references([item.model_dump() for item in body.references])
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
     if (
         session.scalar(
             select(Project)
@@ -309,6 +322,7 @@ def create_run(
         config_path = data_root() / "m3-runs" / run.id / "role-assignments.json"
         config_path.parent.mkdir(parents=True, exist_ok=True)
         config_path.write_text(json.dumps(assignments), encoding="utf-8")
+        save_references(config_path.parent, references)
     for spec in plan:
         session.add(
             Task(
@@ -321,6 +335,18 @@ def create_run(
             )
         )
     append_event(session, run.id, "run.created", {"project_id": project_id})
+    if references:
+        append_event(
+            session,
+            run.id,
+            "references.attached",
+            {
+                "references": [
+                    {key: item[key] for key in ("id", "name", "sha256", "chars")}
+                    for item in references
+                ]
+            },
+        )
     session.commit()
     queue_run(run.id)
     return run_payload(run)
@@ -346,6 +372,15 @@ def get_run(
     if run is None:
         raise HTTPException(404, "run not found")
     return run_payload(run)
+
+
+@app.get("/api/runs/{run_id}/references")
+def get_run_references(
+    run_id: str, session: Session = Depends(get_session), user: User = Depends(current_user)
+) -> list:
+    if owned_run(session, run_id, user) is None:
+        raise HTTPException(404, "run not found")
+    return load_references(data_root() / "m3-runs" / run_id)
 
 
 @app.get("/api/runs/{run_id}/tasks")

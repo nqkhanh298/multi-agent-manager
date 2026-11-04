@@ -91,6 +91,25 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .composer textarea { width: 100%; min-height: 55px; max-height: 145px; resize: vertical; background: #0e1429; border: 1px solid #45547b; border-radius: 8px; color: #f5f6ff; padding: 10px 12px; font-size: 12px; line-height: 1.5; }
 .composer textarea::placeholder { color: #737fa1; }
 .composer small { display: block; color: #8896bb; margin-top: 7px; font-size: 10px; }
+.reference-picker { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-top: 10px; }
+.reference-picker label { display: inline-flex; align-items: center; gap: 6px; margin: 0; padding: 7px 10px; border: 1px solid #6d70ba; border-radius: 7px; color: #e4e7ff; cursor: pointer; }
+.reference-picker input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.reference-picker:focus-within label { outline: 2px solid #8a79ff; outline-offset: 2px; }
+.reference-picker span { color: #9ba8cc; font-size: 11px; }
+.reference-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.reference-chips > span { display: inline-flex; align-items: center; gap: 5px; padding: 5px 7px; border-radius: 6px; background: #303b68; color: #e8eeff; font-size: 11px; }
+.reference-chips button { display: grid; place-items: center; padding: 1px; color: #e8eeff; border: 0; background: transparent; cursor: pointer; }
+.run-references { padding: 11px 14px; border-top: 1px solid #2f3c60; }
+.run-references > strong { color: #e8edff; font-size: 12px; }
+.run-references > p { color: #9daed1; font-size: 11px; line-height: 1.5; }
+.run-reference { margin-top: 7px; padding: 8px; border: 1px solid #36476e; border-radius: 7px; background: #111b35; }
+.run-reference summary { display: flex; justify-content: space-between; gap: 8px; color: #e4eaff; font-size: 12px; cursor: pointer; }
+.run-reference summary span { color: #9bc8ff; font-size: 10px; }
+.run-reference small { display: block; margin-top: 6px; color: #91a1c2; }
+.run-reference pre { max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: #bfc9e3; font: 11px/1.45 monospace; }
+.reference-evidence { margin-top: 8px; padding: 8px; border-left: 2px solid #56d4a1; background: #172744; color: #dbe7f8; font-size: 11px; }
+.reference-evidence p { margin: 5px 0; }
+.reference-failure { margin: 10px 14px; padding: 9px; border: 1px solid #a75269; border-radius: 6px; color: #ffb7c5; background: #3c2038; font-size: 11px; }
 .primary-button { border: 1px solid #8f74ff; background: linear-gradient(135deg, #7561fc, #5135db); box-shadow: 0 5px 14px #4935ba50; color: #fff; font-weight: 700; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 15px; white-space: nowrap; font-size: 11px; }
 .primary-button:hover:not(:disabled) { filter: brightness(1.13); }
 .metrics-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 11px; margin-bottom: 15px; }

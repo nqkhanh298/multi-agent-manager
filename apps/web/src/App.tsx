@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Activity, ArrowRight, Bell, Bot, Check, ChevronRight, CircleCheck, Clock3,
-  Download, FolderPlus, LayoutDashboard, LogOut, Pause, Play, Plus,
+  Download, FolderPlus, LayoutDashboard, LogOut, Paperclip, Pause, Play, Plus,
   Send, ShieldCheck, Square, Trash2, Workflow as WorkflowIcon, X,
 } from 'lucide-react'
 import { api } from './api'
@@ -13,6 +13,7 @@ import { AgentActivity } from './components/AgentActivity'
 import { ProjectList } from './components/ProjectList'
 import { Workflow } from './components/Workflow'
 import { Workspace } from './components/Workspace'
+import { RunReferences } from './components/RunReferences'
 import { useRunEvents } from './hooks/useRunEvents'
 import { useUI } from './store'
 import type { Project, RunEvent, Task } from './types'
@@ -35,6 +36,10 @@ function statusClass(status: string): string {
 }
 
 function recentEvent(event: RunEvent): string {
+  if (event.type === 'references.attached') return 'Đã lưu tài liệu tham chiếu cho lượt chạy'
+  if (event.type === 'references.injected') return `Đã gửi tài liệu cho ${String(event.payload.role)}`
+  if (event.type === 'references.verified') return 'QA đã đối chiếu tài liệu với mã nguồn'
+  if (event.type === 'references.review_failed') return `Đối chiếu tài liệu thất bại: ${String(event.payload.reason || '')}`
   if (event.type === 'run.status') return `Lượt chạy: ${statusNames[String(event.payload.to)] || String(event.payload.to)}`
   if (event.type === 'task.merge') return `${event.payload.task_id} đã ${event.payload.status === 'MERGED' ? 'merge' : 'gặp xung đột'}`
   if (event.type === 'task.status') return `${event.payload.task_id}: ${statusNames[String(event.payload.status)] || event.payload.status}`
@@ -45,6 +50,15 @@ function recentEvent(event: RunEvent): string {
   if (event.type === 'tool.started') return `${event.payload.task_id} đang chạy ${event.payload.tool}`
   if (event.type === 'tool.completed') return `${event.payload.task_id} đã xong ${event.payload.tool}`
   return event.type
+}
+
+function encodeReference(file: File): Promise<{ name: string; data_base64: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error(`Không đọc được ${file.name}`))
+    reader.onload = () => resolve({ name: file.name, data_base64: String(reader.result).split(',')[1] || '' })
+    reader.readAsDataURL(file)
+  })
 }
 
 function App() {
@@ -63,6 +77,7 @@ function Studio({ token }: { token: string }) {
   const setWorkspaceTab = useUI((state) => state.setWorkspaceTab)
   const setToken = useUI((state) => state.setToken)
   const [prompt, setPrompt] = useState('')
+  const [referenceFiles, setReferenceFiles] = useState<File[]>([])
   const [newProject, setNewProject] = useState('')
   const [showProjectForm, setShowProjectForm] = useState(false)
   const [busy, setBusy] = useState('')
@@ -78,6 +93,7 @@ function Studio({ token }: { token: string }) {
   const eventsQuery = useQuery({ queryKey: ['events', runId], queryFn: () => api.events(token, runId!), enabled: Boolean(runId), refetchInterval: 5000 })
   const filesQuery = useQuery({ queryKey: ['files', runId], queryFn: () => api.files(token, runId!), enabled: Boolean(runId), refetchInterval: 3000 })
   const reportQuery = useQuery({ queryKey: ['report', runId], queryFn: () => api.report(token, runId!), enabled: Boolean(runId), retry: false, refetchInterval: 4000 })
+  const referencesQuery = useQuery({ queryKey: ['references', runId], queryFn: () => api.references(token, runId!), enabled: Boolean(runId) })
   const artifactsQuery = useQuery({ queryKey: ['artifacts', runId], queryFn: () => api.artifacts(token, runId!), enabled: Boolean(runId), refetchInterval: 4000 })
   const approvalsQuery = useQuery({ queryKey: ['approvals', runId], queryFn: () => api.approvals(token, runId!), enabled: Boolean(runId), refetchInterval: 4000 })
   useRunEvents(token, runId)
@@ -146,14 +162,28 @@ function Studio({ token }: { token: string }) {
     setBusy('run')
     setError('')
     try {
-      const created = await api.createRun(token, projectId, prompt.trim())
+      const references = await Promise.all(referenceFiles.map(encodeReference))
+      const created = await api.createRun(token, projectId, prompt.trim(), references)
       await queryClient.invalidateQueries({ queryKey: ['runs', projectId] })
       setRun(created.id)
       setWorkspaceTab('preview')
       setPrompt('')
+      setReferenceFiles([])
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Không bắt đầu được lượt chạy')
     } finally { setBusy('') }
+  }
+
+  function addReferenceFiles(files: FileList | null) {
+    if (!files) return
+    const next = [...referenceFiles, ...Array.from(files)]
+    if (next.length > 3) { setError('Chỉ đính kèm tối đa 3 tài liệu.'); return }
+    if (next.some((file) => !/\.(pdf|docx|txt|md|csv|json)$/i.test(file.name) || file.size > 2_000_000)) {
+      setError('Chỉ hỗ trợ PDF, DOCX, TXT, MD, CSV, JSON; mỗi tệp tối đa 2 MB.')
+      return
+    }
+    setError('')
+    setReferenceFiles(next)
   }
 
   async function control(action: 'pause' | 'resume' | 'cancel') {
@@ -218,7 +248,7 @@ function Studio({ token }: { token: string }) {
 
           <CodexConnection token={token} />
           <RoleSettings token={token} />
-          <section className="composer panel"><div className="composer-icon"><Bot size={22} /></div><form onSubmit={createRun}><label htmlFor="run-prompt">Bạn muốn hệ thống xây gì?</label><div className="composer-row"><textarea id="run-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Mô tả ứng dụng bạn muốn tạo, không cần chọn công nghệ…" rows={2} disabled={!projectId} /><button className="primary-button" type="submit" disabled={!projectId || !prompt.trim() || busy === 'run' || !codexAccount.data?.connected}>{busy === 'run' ? 'Đang tạo…' : 'Bắt đầu chạy'} <Send size={16} /></button></div><small>Hệ thống tự chọn cách tạo ứng dụng. Kết quả chạy được xem trong tab Preview.</small></form></section>
+          <section className="composer panel"><div className="composer-icon"><Bot size={22} /></div><form onSubmit={createRun}><label htmlFor="run-prompt">Bạn muốn hệ thống xây gì?</label><div className="composer-row"><textarea id="run-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Mô tả ứng dụng bạn muốn tạo, không cần chọn công nghệ…" rows={2} disabled={!projectId} /><button className="primary-button" type="submit" disabled={!projectId || !prompt.trim() || busy === 'run' || !codexAccount.data?.connected}>{busy === 'run' ? 'Đang tạo…' : 'Bắt đầu chạy'} <Send size={16} /></button></div><div className="reference-picker"><label htmlFor="run-references"><Paperclip size={15} /> Thêm tài liệu tham chiếu</label><input id="run-references" type="file" aria-label="Chọn tài liệu tham chiếu" accept=".pdf,.docx,.txt,.md,.csv,.json" multiple disabled={!projectId || busy === 'run'} onChange={(event) => { addReferenceFiles(event.target.files); event.target.value = '' }} /><span>PDF, DOCX, TXT, MD, CSV, JSON · tối đa 3 tệp, 2 MB/tệp</span></div>{referenceFiles.length > 0 && <div className="reference-chips">{referenceFiles.map((file, index) => <span key={`${file.name}-${index}`}>{file.name}<button type="button" aria-label={`Bỏ tài liệu ${file.name}`} onClick={() => setReferenceFiles((current) => current.filter((_, i) => i !== index))}><X size={13} /></button></span>)}</div>}<small>Tài liệu được gửi vào từng agent; QA sẽ đối chiếu với mã nguồn trước khi hoàn thành. Kết quả chạy được xem trong tab Preview.</small></form></section>
 
           <div className="metrics-grid"><div className="metric-card"><span><Activity size={16} /> Tiến độ</span><strong>{tasks.length ? `${progress}%` : '—'}</strong><small>{completed}/{tasks.length} task hoàn thành</small></div><div className="metric-card"><span><WorkflowIcon size={16} /> Tasks</span><strong>{tasks.length || '—'}</strong><small>{tasks.length ? 'Trong DAG hiện tại' : 'Chờ lượt chạy'}</small></div><div className="metric-card"><span><Clock3 size={16} /> Bắt đầu</span><strong className="metric-date">{run ? new Date(run.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '—'}</strong><small>{run ? new Date(run.created_at).toLocaleDateString('vi-VN') : 'Chưa có dữ liệu'}</small></div><div className="metric-card"><span><ShieldCheck size={16} /> Kiểm thử</span><strong className="metric-date">{reportQuery.data?.integration?.exit_code === 0 ? 'Đạt' : run?.status === 'COMPLETED' ? 'Hoàn tất' : '—'}</strong><small>{reportQuery.data?.integration?.stdout ? String(reportQuery.data.integration.stdout).trim().split('\n').at(-1) : 'Chờ QA'}</small></div></div>
 
@@ -226,7 +256,7 @@ function Studio({ token }: { token: string }) {
 
           <div className="dashboard-grid"><section className="workflow-panel panel"><div className="panel-heading"><div><span className="panel-eyebrow">ORCHESTRATION</span><h2><WorkflowIcon size={18} /> Workflow</h2></div><span className="panel-tag">DAG · {tasks.length} task</span></div><Workflow tasks={tasks} selectedTaskId={taskId} onSelect={setTask} /></section><aside className="progress-panel panel"><div className="panel-heading"><div><span className="panel-eyebrow">LIVE STATUS</span><h2><Activity size={18} /> Tiến trình</h2></div></div><div className="progress-summary"><div><span>Tổng tiến độ</span><strong>{progress}%</strong></div><div className="progress-track"><span style={{ width: `${progress}%` }} /></div></div><AgentActivity run={run} tasks={tasks} events={events} /><div className="task-timeline">{tasks.map((task: Task) => <button key={task.id} className={`timeline-item ${taskId === task.id ? 'selected' : ''}`} onClick={() => setTask(task.id)}><span className={`timeline-marker ${statusClass(task.status)}`}>{task.status === 'COMPLETED' && <Check size={11} />}</span><span><strong>{task.title}</strong><small>{statusNames[task.status] || task.status} · {roleNames[task.agent_role] || task.agent_role}</small></span></button>)}{!tasks.length && <p className="empty-note">Các bước thực hiện sẽ xuất hiện tại đây.</p>}</div>{selectedTask && <div className="agent-inspector"><span className="panel-eyebrow">AGENT INSPECTOR</span><strong>{roleNames[selectedTask.agent_role] || selectedTask.agent_role}</strong><p>{selectedTask.title}</p><small>{selectedTask.model ? `Model: ${selectedTask.model} · ` : ''}Phụ thuộc: {selectedTask.depends_on.join(', ') || 'Không có'}</small></div>}</aside></div>
 
-          {run && <div className="bottom-grid"><section className="activity-panel panel"><div className="panel-heading"><div><span className="panel-eyebrow">ACTIVITY</span><h2><Bot size={18} /> Yêu cầu & sự kiện</h2></div><span className="panel-tag">{events.length} sự kiện</span></div><div className="prompt-message"><div className="message-avatar">Y</div><p>{run.prompt}</p></div><div className="recent-events">{latestEvents.map((event) => <div className="recent-event" key={event.event_id}><span className="event-bullet" /><span>{recentEvent(event)}</span><time>{new Date(event.timestamp).toLocaleTimeString('vi-VN')}</time></div>)}</div></section><Workspace token={token} runId={run.id} files={files} report={reportQuery.data} events={events} preview={run.engine?.startsWith('codex')} webApp={run.engine === 'codex_web'} /></div>}
+          {run && <div className="bottom-grid"><section className="activity-panel panel"><div className="panel-heading"><div><span className="panel-eyebrow">ACTIVITY</span><h2><Bot size={18} /> Yêu cầu & sự kiện</h2></div><span className="panel-tag">{events.length} sự kiện</span></div><div className="prompt-message"><div className="message-avatar">Y</div><p>{run.prompt}</p></div><RunReferences references={referencesQuery.data || []} checks={reportQuery.data?.reference_checks || []} events={events} />{run.status === 'BLOCKED' && reportQuery.data?.reason && <p className="reference-failure" role="alert">{reportQuery.data.reason}</p>}<div className="recent-events">{latestEvents.map((event) => <div className="recent-event" key={event.event_id}><span className="event-bullet" /><span>{recentEvent(event)}</span><time>{new Date(event.timestamp).toLocaleTimeString('vi-VN')}</time></div>)}</div></section><Workspace token={token} runId={run.id} files={files} report={reportQuery.data} events={events} preview={run.engine?.startsWith('codex')} webApp={run.engine === 'codex_web'} /></div>}
           {!run && <div className="new-workspace-hint"><FolderPlus size={26} /><strong>{selectedProject ? 'Tạo lượt chạy đầu tiên' : 'Tạo dự án đầu tiên'}</strong><p>{selectedProject ? 'Nhập yêu cầu ở phía trên để bắt đầu workflow.' : 'Bấm dấu + ở thanh bên để tạo không gian làm việc.'}</p></div>}
         </div>
       </main>

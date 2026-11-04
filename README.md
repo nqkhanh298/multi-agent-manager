@@ -18,7 +18,7 @@ A local Codex coding platform prototype with task orchestration, isolated execut
 | Orchestration | Validated task DAG, Coordinator and QA, checkpointing, repair loop |
 | Parallel work | Git worktrees for independent tasks, ordered merges, integration QA |
 | Platform backend | FastAPI, PostgreSQL, Redis worker, bearer auth, ordered events, WebSocket replay, run controls, source ZIP |
-| Dashboard | React, TypeScript, horizontal role-colored React Flow workflow, browser or terminal Preview, Monaco, file explorer, Git diff, logs, tests, approvals |
+| Dashboard | React, TypeScript, horizontal role-colored React Flow workflow, browser or terminal Preview, reference attachments, Monaco, file explorer, Git diff, logs, tests, approvals |
 | Hardening | Budgets, worker heartbeat recovery, fault injection, sandbox checks, browser tests |
 
 ```mermaid
@@ -73,6 +73,8 @@ npm run dev
 Open **http://localhost:5173/** and paste the local platform API token. Connect ChatGPT to Codex in the dashboard; the device-code option is available if the browser callback does not work. Create a project and describe what you want. Codex selects a browser app by default, or a Python terminal program when the request explicitly calls for a command-line workflow. Open **Preview** to use the app. For terminal programs, enter responses on separate lines and click **Chạy thử**; each click runs the program from the beginning inside Docker. Source, README, tests and ZIP remain available. The fixed Task Manager benchmark remains accessible with `engine: "demo"` through the API. The API explorer is at **http://localhost:8000/docs**. The platform API token and Codex sign-in are separate credentials.
 
 To assign different Codex models to specialist agents, open **Model Codex theo vai trò**, choose a model for each role, then save before starting a new run. The list comes from Codex. Leave a role at **Mặc định tài khoản** to use the account's default model. The target selector follows Coordinator's model. See [Codex role models](docs/codex-role-models.md).
+
+Attach up to three reference files beside the prompt when you need agents to follow existing requirements or designs. PDF, DOCX, TXT, MD, CSV, and JSON are supported. The dashboard shows the extracted text, delivery events for each agent, and QA's quote-to-source checks. A run with references cannot complete if QA cannot identify a quote from every document and matching evidence in generated source. See [reference handling and limits](docs/references.md).
 
 For smaller offline demonstrations, run `python -m coding_platform.cli demo`, `m2-demo`, or `m3-demo` from the repository root in Ubuntu. The first creates a calculator and runs pytest; M2 demonstrates a failed test followed by repair; M3 builds and merges backend and frontend branches.
 
