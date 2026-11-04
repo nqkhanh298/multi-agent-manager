@@ -4,7 +4,7 @@ import type { Task } from './types'
 export type TaskNode = Node<{ task: Task }, 'task'>
 
 export const CARD_WIDTH = 244
-const CARD_HEIGHT = 146
+const CARD_HEIGHT = 166
 const COLUMN_GAP = 82
 const ROW_GAP = 34
 const MARGIN = 60

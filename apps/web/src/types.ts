@@ -78,6 +78,7 @@ export interface Task {
   title: string
   agent_role: string
   model?: string | null
+  model_source?: 'runtime' | 'configured' | 'default_pending' | 'default_unknown' | 'unknown'
   status: TaskStatus
   depends_on: string[]
   workspace_ref: string | null

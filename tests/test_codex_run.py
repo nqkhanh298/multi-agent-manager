@@ -332,6 +332,7 @@ def test_role_runner_uses_separate_codex_models_and_reports_them(
 
         def run_role(self, role, *args, **kwargs):
             calls.append(("codex", role, kwargs.get("model")))
+            kwargs["on_activity"]("model", kwargs.get("model") or "gpt-default")
             assert reference["id"] in args[1]
             assert "The application must print 'ok'." in args[1]
             if role == "qa" and kwargs.get("output_schema") == REFERENCE_REVIEW_SCHEMA:
@@ -378,6 +379,9 @@ def test_role_runner_uses_separate_codex_models_and_reports_them(
     assert report["status"] == ("COMPLETED" if valid_evidence else "BLOCKED")
     assert ("codex", "researcher", "gpt-6.1-sol") in calls
     assert ("codex", "coordinator", "gpt-6-astra") in calls
+    assert any(
+        kind == "task.model" and payload["model"] == "gpt-default" for kind, payload in events
+    )
     if valid_evidence:
         assert report["reference_checks"][0]["file"] == "app.py"
         assert any(kind == "references.verified" for kind, _ in events)

@@ -7,7 +7,7 @@ import {
   ReactFlow,
   type NodeProps,
 } from '@xyflow/react'
-import { Braces, Check, ChevronLeft, ChevronRight, Code2, DraftingCompass, FileText, FlaskConical, LoaderCircle, Monitor, Network, PackageCheck, Palette, Search, X } from 'lucide-react'
+import { Braces, Check, ChevronLeft, ChevronRight, Code2, Cpu, DraftingCompass, FileText, FlaskConical, LoaderCircle, Monitor, Network, PackageCheck, Palette, Search, X } from 'lucide-react'
 import { buildFlow, CARD_WIDTH, type TaskNode } from '../workflow'
 import type { Task } from '../types'
 
@@ -51,6 +51,11 @@ const statusLabels: Record<string, string> = {
 const TaskCard = memo(function TaskCard({ data, selected }: NodeProps<TaskNode>) {
   const { task } = data
   const Icon = roleIcons[task.agent_role as keyof typeof roleIcons] || Braces
+  const modelLabel = task.model_source === 'runtime' ? 'MODEL ĐANG DÙNG'
+    : task.model_source === 'configured' ? 'MODEL ĐÃ CHỌN'
+      : task.model_source?.startsWith('default') ? 'MODEL MẶC ĐỊNH' : 'MODEL'
+  const modelName = task.model || (task.model_source === 'default_pending' ? 'Chờ xác định khi chạy'
+    : task.model_source === 'default_unknown' ? 'Chưa ghi nhận' : 'Chưa có dữ liệu')
   return (
     <div className={`flow-card role-${task.agent_role} state-${task.status.toLowerCase()} ${selected ? 'selected' : ''}`}>
       <Handle type="target" position={Position.Left} className="flow-handle" />
@@ -64,7 +69,9 @@ const TaskCard = memo(function TaskCard({ data, selected }: NodeProps<TaskNode>)
       </div>
       <strong>{roleNames[task.agent_role] || task.agent_role}</strong>
       <small>{task.title}</small>
-      {task.model && <span className="flow-card-model" title={task.model}>{task.model}</span>}
+      <div className={`flow-card-model ${task.model_source === 'runtime' ? 'resolved' : ''}`} title={modelName}>
+        <span><Cpu size={13} /> {modelLabel}</span><b>{modelName}</b>
+      </div>
       {(task.duration_ms != null || (task.input_tokens || 0) + (task.output_tokens || 0) > 0) && <div className="flow-card-metrics">{task.duration_ms != null && <span>{(task.duration_ms / 1000).toFixed(1)}s</span>}{(task.input_tokens || 0) + (task.output_tokens || 0) > 0 && <span>{(task.input_tokens || 0) + (task.output_tokens || 0)} tokens</span>}</div>}
       <Handle type="source" position={Position.Right} className="flow-handle" />
     </div>

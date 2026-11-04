@@ -108,6 +108,8 @@ def record_m3_event(run_id: str, event_type: str, payload: dict) -> None:
                     execution.ended_at = None
                 if payload["status"] in {"COMPLETED", "FAILED", "CANCELLED"}:
                     execution.ended_at = now_utc()
+            if execution is not None and event_type == "task.model":
+                execution.model = str(payload["model"])
         append_event(session, run_id, event_type, payload)
 
 

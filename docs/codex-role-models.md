@@ -4,6 +4,8 @@ The platform uses Codex for all eight specialist roles: Coordinator, Researcher,
 
 Connect ChatGPT in the dashboard, open **Model Codex theo vai trò**, select models, and save. **Mặc định tài khoản** leaves model selection to Codex. A new run snapshots these assignments; changing settings later does not change an existing run. The automatic target selector uses Coordinator's model. The dashboard fetches available model IDs through Codex app-server `model/list` and sends each chosen model to `thread/start`.
 
+Each workflow block shows its model prominently. Before a role starts, the block shows the configured model or says that the default model is still being resolved. When Codex opens the role's thread, the platform records the actual model returned by `thread/start` and replaces the block's planned label with that model. Older runs that did not record the actual default are marked as unrecorded rather than assigned a guessed model.
+
 The local platform token authenticates dashboard requests. Codex sign-in is scoped to the local platform user. No external provider API keys are needed or accepted. Previously saved non-Codex role assignments reset to the Codex default when settings are read. Existing Codex model choices are retained.
 
 This remains a local prototype. The preview currently supports generated browser apps and Python terminal programs. Native desktop apps, arbitrary stacks, and live remote deployment are outside the current scope.

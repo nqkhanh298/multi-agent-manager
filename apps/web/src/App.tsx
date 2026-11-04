@@ -43,6 +43,7 @@ function recentEvent(event: RunEvent): string {
   if (event.type === 'run.status') return `Lượt chạy: ${statusNames[String(event.payload.to)] || String(event.payload.to)}`
   if (event.type === 'task.merge') return `${event.payload.task_id} đã ${event.payload.status === 'MERGED' ? 'merge' : 'gặp xung đột'}`
   if (event.type === 'task.status') return `${event.payload.task_id}: ${statusNames[String(event.payload.status)] || event.payload.status}`
+  if (event.type === 'task.model') return `${event.payload.task_id}: đang dùng model ${String(event.payload.model)}`
   if (event.type === 'task.activity') return `${event.payload.task_id}: ${String(event.payload.detail || '')}`
   if (event.type === 'run.target_activity') return String(event.payload.detail || 'Đang chọn cách tạo ứng dụng')
   if (event.type === 'run.target_selected') return event.payload.target === 'web' ? 'Đã chọn ứng dụng có giao diện' : 'Đã chọn ứng dụng terminal'

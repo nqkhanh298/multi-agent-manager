@@ -150,7 +150,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .react-flow__controls { background: #192340; box-shadow: none; border: 1px solid #3f5079; }
 .react-flow__controls-button { background: #192340; color: #e3eaff; border-color: #364363; fill: #e3eaff; }
 .react-flow__controls-button:hover { background: #2a3559; }
-.flow-card { --role-accent: #8e83ff; position: relative; overflow: hidden; width: 244px; min-height: 146px; border: 1px solid color-mix(in srgb, var(--role-accent) 70%, #445270); border-radius: 12px; padding: 13px 14px; color: #eef3ff; text-align: left; background: linear-gradient(135deg, color-mix(in srgb, var(--role-accent) 18%, #17233d), #111a31 72%); box-shadow: 0 8px 25px #0007, inset 0 0 0 1px #ffffff0d; transition: transform .2s, box-shadow .2s, border-color .2s; }
+.flow-card { --role-accent: #8e83ff; position: relative; overflow: hidden; width: 244px; min-height: 166px; border: 1px solid color-mix(in srgb, var(--role-accent) 70%, #445270); border-radius: 12px; padding: 13px 14px; color: #eef3ff; text-align: left; background: linear-gradient(135deg, color-mix(in srgb, var(--role-accent) 18%, #17233d), #111a31 72%); box-shadow: 0 8px 25px #0007, inset 0 0 0 1px #ffffff0d; transition: transform .2s, box-shadow .2s, border-color .2s; }
 .flow-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--role-accent), transparent); }
 .flow-card:hover { transform: translateY(-3px); box-shadow: 0 12px 30px #0009, 0 0 18px color-mix(in srgb, var(--role-accent) 25%, transparent); }
 .flow-card.role-researcher { --role-accent: #46d5dc; }.flow-card.role-architect { --role-accent: #b789ff; }.flow-card.role-designer { --role-accent: #f281c6; }
@@ -236,7 +236,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .role-settings-toggle span { color: #a9b8df; font-size: 12px; font-weight: 500; }
 .role-settings-body { display: grid; gap: 14px; padding: 0 16px 16px; }
 .role-settings-body p { margin: 0; color: #a9b8df; font-size: 12px; }
-.flow-card-model { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 4px 7px; margin-top: 8px; border: 1px solid #50618e; border-radius: 6px; color: #c6d5ff; font-size: 10px; }
+.flow-card-model { display: grid; gap: 3px; min-width: 0; margin-top: 9px; padding: 7px 9px; border: 1px solid color-mix(in srgb, var(--role-accent) 35%, #3e5070); border-radius: 7px; background: #0b1429a8; }
+.flow-card-model span { display: flex; align-items: center; gap: 5px; color: #aabbdc; font-size: 9px; font-weight: 700; letter-spacing: .07em; }
+.flow-card-model b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #e5eeff; font: 700 12px/1.35 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.flow-card-model.resolved { border-color: var(--role-accent); box-shadow: inset 2px 0 var(--role-accent); }
 .role-assignment-list { display: grid; gap: 8px; }
 .role-assignment-row { display: grid; grid-template-columns: minmax(130px, 1fr) minmax(190px, 2fr); align-items: center; gap: 8px; }
 .role-assignment-row strong { color: #dbe4ff; font-size: 12px; }

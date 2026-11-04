@@ -194,6 +194,8 @@ test('keeps eight specialist stages readable in a horizontal workflow', async ({
   state.tasks.splice(0, state.tasks.length, ...roles.map((role, index) => ({
     id: `T${index + 1}`, title: `${role} task`, agent_role: role,
     status: index < 3 ? 'COMPLETED' : index === 3 ? 'RUNNING' : 'PENDING',
+    model: index === 0 ? 'gpt-6.1-sol' : index === 1 ? 'gpt-6-astra' : null,
+    model_source: index === 0 ? 'runtime' : index === 1 ? 'configured' : 'default_pending',
     depends_on: index ? [`T${index}`] : [], workspace_ref: null,
   })))
   await page.goto('/')
@@ -201,6 +203,11 @@ test('keeps eight specialist stages readable in a horizontal workflow', async ({
   await expect(page.locator('.flow-card.role-designer .flow-card-meta')).toContainText('THIẾT KẾ')
   await expect(page.locator('.flow-card.role-qa .flow-card-meta')).toContainText('KIỂM THỬ')
   await expect(page.locator('.flow-card.role-release .flow-card-meta')).toContainText('BÀN GIAO')
+  await expect(page.locator('.flow-card.role-coordinator .flow-card-model')).toContainText('MODEL ĐANG DÙNG')
+  await expect(page.locator('.flow-card.role-coordinator .flow-card-model')).toContainText('gpt-6.1-sol')
+  await expect(page.locator('.flow-card.role-researcher .flow-card-model')).toContainText('MODEL ĐÃ CHỌN')
+  await expect(page.locator('.flow-card.role-researcher .flow-card-model')).toContainText('gpt-6-astra')
+  await expect(page.locator('.flow-card.role-architect .flow-card-model')).toContainText('Chờ xác định khi chạy')
   const viewport = page.locator('.workflow-canvas')
   const workflowPanel = page.locator('.workflow-panel')
   const progressPanel = page.locator('.progress-panel')

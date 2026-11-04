@@ -412,18 +412,31 @@ def list_tasks(
             ended = ended.replace(tzinfo=timezone.utc)
         return max(0, int((ended - started).total_seconds() * 1000))
 
+    def model_info(task: Task) -> tuple[str | None, str]:
+        assignment = assignments.get(task.agent_role)
+        execution = executions.get(task.id)
+        recorded = execution.model if execution else None
+        if recorded and recorded != "codex" and not recorded.startswith("codex · "):
+            return recorded, "runtime"
+        if recorded and recorded.startswith("codex · "):
+            return recorded.removeprefix("codex · "), "configured"
+        if assignment and assignment.get("model"):
+            return assignment["model"], "configured"
+        if assignment:
+            return None, "default_unknown" if task.status in {
+                "COMPLETED",
+                "FAILED",
+                "CANCELLED",
+            } else "default_pending"
+        return recorded, "unknown"
+
     return [
         {
             "id": task.task_key,
             "title": task.title,
             "agent_role": task.agent_role,
-            "model": executions[task.id].model
-            if task.id in executions
-            else (
-                f"{assignments[task.agent_role]['provider']} · {assignments[task.agent_role]['model'] or 'mặc định'}"
-                if task.agent_role in assignments
-                else None
-            ),
+            "model": model_info(task)[0],
+            "model_source": model_info(task)[1],
             "status": task.status,
             "depends_on": task.dependencies,
             "workspace_ref": None,

@@ -208,6 +208,7 @@ class CodexRunRunner:
             {key: item[key] for key in ("id", "name", "sha256", "chars")} for item in references
         ]
         context: dict[str, str] = {}
+        resolved_models: dict[str, str] = {}
         for role in (
             "coordinator",
             "researcher",
@@ -288,6 +289,10 @@ class CodexRunRunner:
                 self.event("task.status", {"task_id": task.id, "status": "RUNNING", **assignment})
 
                 def activity(phase: str, detail: str) -> None:
+                    if phase == "model":
+                        resolved_models[task.id] = detail
+                        self.event("task.model", {"task_id": task.id, "model": detail})
+                        return
                     self.event(
                         "task.activity",
                         {"task_id": task.id, "role": task.agent, "phase": phase, "detail": detail},
@@ -441,7 +446,7 @@ class CodexRunRunner:
                         "task_id": task.id,
                         "status": "COMPLETED",
                         "provider": assignment["provider"],
-                        "model": assignment["model"],
+                        "model": resolved_models.get(task.id) or assignment["model"],
                         "test_stdout": report["integration"]["stdout"]
                         if task.agent == "qa"
                         else "",

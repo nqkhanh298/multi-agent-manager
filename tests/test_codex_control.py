@@ -6,7 +6,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from apps.api.models import Base, Event, Project, Run, Task, User
+from apps.api.models import AgentExecution, Base, Event, Project, Run, Task, User
 from apps.worker import main as worker
 
 
@@ -76,10 +76,13 @@ def test_worker_records_run_level_target_events_without_task_id(monkeypatch):
         run = Run(project_id=project.id, prompt="Make a game", engine="codex_auto")
         session.add(run)
         session.flush()
+        session.add(Task(run_id=run.id, task_key="T1", title="Plan", agent_role="coordinator"))
         run_id = run.id
     monkeypatch.setattr(worker, "SessionLocal", sessions)
     worker.record_m3_event(run_id, "run.target_selection", {"status": "RUNNING"})
     worker.record_m3_event(run_id, "run.target_selected", {"target": "web"})
+    worker.record_m3_event(run_id, "task.status", {"task_id": "T1", "status": "RUNNING"})
+    worker.record_m3_event(run_id, "task.model", {"task_id": "T1", "model": "gpt-6.1-sol"})
     with sessions() as session:
         events = session.scalars(
             select(Event).where(Event.run_id == run_id).order_by(Event.seq)
@@ -87,6 +90,9 @@ def test_worker_records_run_level_target_events_without_task_id(monkeypatch):
         assert [event.type for event in events] == [
             "run.target_selection",
             "run.target_selected",
+            "task.status",
+            "task.model",
         ]
-        assert events[-1].payload == {"target": "web"}
+        assert events[1].payload == {"target": "web"}
+        assert session.scalar(select(AgentExecution)).model == "gpt-6.1-sol"
     engine.dispose()

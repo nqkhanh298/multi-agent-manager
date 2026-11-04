@@ -192,6 +192,9 @@ class CodexAppServer:
             stop=stop,
         )
         thread_id = thread["thread"]["id"]
+        resolved_model = thread["thread"].get("model") or model
+        if isinstance(resolved_model, str) and resolved_model:
+            activity("model", resolved_model)
         params: dict[str, Any] = {
             "threadId": thread_id,
             "input": [

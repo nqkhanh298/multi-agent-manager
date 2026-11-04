@@ -4,13 +4,13 @@ import base64
 import json
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from apps.api import main as api_module
 from apps.api.db import get_session
-from apps.api.models import Base, Project, Run, Task, User
+from apps.api.models import AgentExecution, Base, Project, Run, Task, User
 from apps.api.service import token_digest
 from coding_platform.codex_run import CODEX_TASKS
 from coding_platform.contracts import ToolResult
@@ -137,6 +137,29 @@ def test_codex_run_requires_account_and_creates_role_tasks(monkeypatch, tmp_path
         assert auto_response.status_code == 202
         assert auto_response.json()["engine"] == "codex_auto"
         auto_id = auto_response.json()["id"]
+        task_rows = client.get(f"/api/runs/{auto_id}/tasks", headers=headers).json()
+        assert (
+            next(task for task in task_rows if task["agent_role"] == "researcher")["model"]
+            == "gpt-6.1-sol"
+        )
+        assert (
+            next(task for task in task_rows if task["agent_role"] == "coordinator")["model_source"]
+            == "default_pending"
+        )
+        with sessions.begin() as session:
+            coordinator = session.scalar(
+                select(Task).where(Task.run_id == auto_id, Task.agent_role == "coordinator")
+            )
+            session.add(AgentExecution(task_id=coordinator.id, model="gpt-6-astra"))
+        actual = client.get(f"/api/runs/{auto_id}/tasks", headers=headers).json()
+        assert (
+            next(task for task in actual if task["agent_role"] == "coordinator")["model"]
+            == "gpt-6-astra"
+        )
+        assert (
+            next(task for task in actual if task["agent_role"] == "coordinator")["model_source"]
+            == "runtime"
+        )
         attached = client.get(f"/api/runs/{auto_id}/references", headers=headers)
         assert attached.status_code == 200
         assert attached.json()[0]["name"] == "requirements.md"

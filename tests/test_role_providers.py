@@ -37,7 +37,7 @@ def test_codex_thread_receives_selected_model(tmp_path, monkeypatch):
     def call(method, params=None, timeout=15, stop=None):
         calls.append((method, params))
         if method == "thread/start":
-            return {"thread": {"id": "thread-1"}}
+            return {"thread": {"id": "thread-1", "model": "gpt-6.1-sol"}}
         if method == "turn/start":
             return {"turn": {"id": "turn-1"}}
         raise AssertionError(method)
@@ -51,5 +51,14 @@ def test_codex_thread_receives_selected_model(tmp_path, monkeypatch):
             "params": {"threadId": "thread-1", "turn": {"id": "turn-1", "status": "completed"}},
         },
     )
-    client.run_role("qa", tmp_path / "SKILL.md", "Check", tmp_path, model="gpt-6.1-sol")
+    activities = []
+    client.run_role(
+        "qa",
+        tmp_path / "SKILL.md",
+        "Check",
+        tmp_path,
+        model="gpt-6.1-sol",
+        on_activity=lambda phase, detail: activities.append((phase, detail)),
+    )
     assert calls[0][1]["model"] == "gpt-6.1-sol"
+    assert ("model", "gpt-6.1-sol") in activities
