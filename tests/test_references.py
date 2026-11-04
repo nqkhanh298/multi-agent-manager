@@ -11,6 +11,7 @@ from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 from coding_platform.references import (
     extract_reference,
     prepare_references,
+    prepare_source_reference,
     reference_brief,
     verify_reference_review,
 )
@@ -88,4 +89,41 @@ def test_review_requires_quote_from_reference_and_evidence_in_real_source():
             answer.replace("blue buttons", "green buttons"),
             [ref],
             {"styles.css": "button { background: blue; }"},
+        )
+
+
+def test_local_source_is_read_only_reference_with_file_paths():
+    source = prepare_source_reference(
+        [
+            {
+                "path": "old-game/src/game.ts",
+                "data_base64": base64.b64encode(b"export const score = 0;").decode(),
+            },
+            {
+                "path": "old-game/README.md",
+                "data_base64": base64.b64encode(b"Keep scores across rounds.").decode(),
+            },
+        ]
+    )
+    assert source["kind"] == "source"
+    assert source["files_count"] == 2
+    assert "[FILE old-game/src/game.ts]" in source["text"]
+    assert "export const score = 0;" in reference_brief([source])
+    assert "NEW output" in reference_brief([source])
+    assert verify_reference_review(
+        '{"reference_checks":[{"id":"%s","quote":"Keep scores across rounds.","file":"new.ts","evidence":"localStorage.setItem"}]}'
+        % source["id"],
+        [source],
+        {"new.ts": "localStorage.setItem('score', score)"},
+    )
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["old/.env", "old/node_modules/a.js", "old/../secret.py", "C:/secret.py", "old/image.png"],
+)
+def test_unsafe_source_paths_are_rejected(path):
+    with pytest.raises(ValueError, match="unsafe source path"):
+        prepare_source_reference(
+            [{"path": path, "data_base64": base64.b64encode(b"secret").decode()}]
         )

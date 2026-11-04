@@ -63,6 +63,22 @@ function encodeReference(file: File): Promise<{ name: string; data_base64: strin
   })
 }
 
+const SOURCE_SUFFIX = /\.(txt|md|csv|json|py|js|jsx|ts|tsx|html|css|scss|vue|svelte|yaml|yml|toml|sql|go|rs|java|kt|c|cpp|h|cs|php|rb|sh|bat|ps1|xml)$/i
+const SOURCE_IGNORED = new Set(['.git', 'node_modules', 'dist', 'build', '.venv', 'venv', '__pycache__', 'coverage'])
+const SOURCE_BASENAMES = new Set(['Dockerfile', 'Makefile', 'Procfile', 'Gemfile'])
+
+function sourcePath(file: File): string { return file.webkitRelativePath || `source/${file.name}` }
+
+function isSourceFile(file: File): boolean {
+  const parts = sourcePath(file).split('/')
+  return (SOURCE_SUFFIX.test(file.name) || SOURCE_BASENAMES.has(file.name)) && parts.every((part) => !part.startsWith('.') && !SOURCE_IGNORED.has(part.toLowerCase()))
+}
+
+async function encodeSourceFile(file: File): Promise<{ path: string; data_base64: string }> {
+  const encoded = await encodeReference(file)
+  return { path: sourcePath(file), data_base64: encoded.data_base64 }
+}
+
 function App() {
   const token = useUI((state) => state.token)
   return token ? <Studio token={token} /> : <Login />
@@ -80,6 +96,7 @@ function Studio({ token }: { token: string }) {
   const setToken = useUI((state) => state.setToken)
   const [prompt, setPrompt] = useState('')
   const [referenceFiles, setReferenceFiles] = useState<File[]>([])
+  const [sourceFiles, setSourceFiles] = useState<File[]>([])
   const [newProject, setNewProject] = useState('')
   const [showProjectForm, setShowProjectForm] = useState(false)
   const [busy, setBusy] = useState('')
@@ -171,12 +188,14 @@ function Studio({ token }: { token: string }) {
     setError('')
     try {
       const references = await Promise.all(referenceFiles.map(encodeReference))
-      const created = await api.createRun(token, projectId, prompt.trim(), references)
+      const source = await Promise.all(sourceFiles.map(encodeSourceFile))
+      const created = await api.createRun(token, projectId, prompt.trim(), references, source)
       await queryClient.invalidateQueries({ queryKey: ['runs', projectId] })
       setRun(created.id)
       setWorkspaceTab('preview')
       setPrompt('')
       setReferenceFiles([])
+      setSourceFiles([])
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Không bắt đầu được lượt chạy')
     } finally { setBusy('') }
@@ -192,6 +211,19 @@ function Studio({ token }: { token: string }) {
     }
     setError('')
     setReferenceFiles(next)
+  }
+
+  function addSourceFolder(files: FileList | null) {
+    if (!files) return
+    const selected = Array.from(files).filter(isSourceFile)
+    const total = selected.reduce((sum, file) => sum + file.size, 0)
+    if (!selected.length) { setError('Thư mục không có file source dạng văn bản được hỗ trợ.'); return }
+    if (selected.length > 40 || total > 2_000_000 || selected.some((file) => file.size > 48_000)) {
+      setError('Source tham chiếu tối đa 40 file, 2 MB tổng cộng và khoảng 12.000 ký tự mỗi file. Hãy chọn thư mục nhỏ hơn.')
+      return
+    }
+    setSourceFiles(selected)
+    setError('')
   }
 
   async function control(action: 'pause' | 'resume' | 'cancel') {
@@ -256,7 +288,7 @@ function Studio({ token }: { token: string }) {
 
           <CodexConnection token={token} />
           <RoleSettings token={token} />
-          <section className="composer panel"><div className="composer-icon"><Bot size={22} /></div><form onSubmit={createRun}><label htmlFor="run-prompt">Bạn muốn hệ thống thực hiện điều gì?</label><div className="composer-row"><textarea id="run-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Mô tả yêu cầu: tạo ứng dụng, nghiên cứu, viết báo cáo…" rows={2} disabled={!projectId} /><button className="primary-button" type="submit" disabled={!projectId || !prompt.trim() || busy === 'run' || !codexAccount.data?.connected}>{busy === 'run' ? 'Đang tạo…' : 'Bắt đầu chạy'} <Send size={16} /></button></div><div className="reference-picker"><label htmlFor="run-references"><Paperclip size={15} /> Thêm tài liệu tham chiếu</label><input id="run-references" type="file" aria-label="Chọn tài liệu tham chiếu" accept=".pdf,.docx,.txt,.md,.csv,.json" multiple disabled={!projectId || busy === 'run'} onChange={(event) => { addReferenceFiles(event.target.files); event.target.value = '' }} /><span>PDF, DOCX, TXT, MD, CSV, JSON · tối đa 3 tệp, 2 MB/tệp</span></div>{referenceFiles.length > 0 && <div className="reference-chips">{referenceFiles.map((file, index) => <span key={`${file.name}-${index}`}>{file.name}<button type="button" aria-label={`Bỏ tài liệu ${file.name}`} onClick={() => setReferenceFiles((current) => current.filter((_, i) => i !== index))}><X size={13} /></button></span>)}</div>}<small>Coordinator tự chọn agent phù hợp. Tài liệu được gửi đến từng agent; QA đối chiếu với kết quả trước khi bàn giao. Xem kết quả trong tab Preview.</small></form></section>
+          <section className="composer panel"><div className="composer-icon"><Bot size={22} /></div><form onSubmit={createRun}><label htmlFor="run-prompt">Bạn muốn hệ thống thực hiện điều gì?</label><div className="composer-row"><textarea id="run-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Mô tả yêu cầu: tạo ứng dụng, nghiên cứu, viết báo cáo…" rows={2} disabled={!projectId} /><button className="primary-button" type="submit" disabled={!projectId || !prompt.trim() || busy === 'run' || !codexAccount.data?.connected}>{busy === 'run' ? 'Đang tạo…' : 'Bắt đầu chạy'} <Send size={16} /></button></div><div className="reference-picker"><label htmlFor="run-references"><Paperclip size={15} /> Thêm tài liệu tham chiếu</label><input id="run-references" type="file" aria-label="Chọn tài liệu tham chiếu" accept=".pdf,.docx,.txt,.md,.csv,.json" multiple disabled={!projectId || busy === 'run'} onChange={(event) => { addReferenceFiles(event.target.files); event.target.value = '' }} /><span>PDF, DOCX, TXT, MD, CSV, JSON · tối đa 3 tệp, 2 MB/tệp</span></div><div className="reference-picker"><label htmlFor="run-source"><FolderPlus size={15} /> Thêm thư mục source để tham chiếu</label><input id="run-source" type="file" aria-label="Chọn thư mục source tham chiếu" multiple {...{ webkitdirectory: '' }} disabled={!projectId || busy === 'run'} onChange={(event) => { addSourceFolder(event.target.files); event.target.value = '' }} /><span>Đọc file mã nguồn để tạo project mới · tối đa 40 file, 2 MB tổng cộng</span></div>{sourceFiles.length > 0 && <div className="reference-chips"><span>{sourcePath(sourceFiles[0]).split('/')[0]}/ · {sourceFiles.length} file<button type="button" aria-label="Bỏ thư mục source tham chiếu" onClick={() => setSourceFiles([])}><X size={13} /></button></span></div>}{referenceFiles.length > 0 && <div className="reference-chips">{referenceFiles.map((file, index) => <span key={`${file.name}-${index}`}>{file.name}<button type="button" aria-label={`Bỏ tài liệu ${file.name}`} onClick={() => setReferenceFiles((current) => current.filter((_, i) => i !== index))}><X size={13} /></button></span>)}</div>}<small>Coordinator tự chọn agent phù hợp. Tài liệu được gửi đến từng agent; QA đối chiếu với kết quả trước khi bàn giao. Xem kết quả trong tab Preview.</small></form></section>
 
           <div className="metrics-grid"><div className="metric-card"><span><Activity size={16} /> Tiến độ</span><strong>{tasks.length ? `${progress}%` : '—'}</strong><small>{completed}/{tasks.length} task hoàn thành</small></div><div className="metric-card"><span><WorkflowIcon size={16} /> Tasks</span><strong>{tasks.length || '—'}</strong><small>{tasks.length ? 'Trong DAG hiện tại' : 'Chờ lượt chạy'}</small></div><div className="metric-card"><span><Clock3 size={16} /> Bắt đầu</span><strong className="metric-date">{run ? new Date(run.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '—'}</strong><small>{run ? new Date(run.created_at).toLocaleDateString('vi-VN') : 'Chưa có dữ liệu'}</small></div><div className="metric-card"><span><ShieldCheck size={16} /> Kiểm thử</span><strong className="metric-date">{reportQuery.data?.integration?.exit_code === 0 ? 'Đạt' : run?.status === 'COMPLETED' ? 'Hoàn tất' : '—'}</strong><small>{reportQuery.data?.integration?.stdout ? String(reportQuery.data.integration.stdout).trim().split('\n').at(-1) : 'Chờ QA'}</small></div></div>
 

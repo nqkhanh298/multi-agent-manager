@@ -76,6 +76,8 @@ To assign different Codex models to specialist agents, open **Model Codex theo v
 
 Attach up to three reference files beside the prompt when you need agents to follow existing requirements or designs. PDF, DOCX, TXT, MD, CSV, and JSON are supported. The dashboard shows the extracted text, delivery events for each agent, and QA's quote-to-output checks. A run with references cannot complete if QA cannot identify a quote from every document and matching evidence in the generated app or report. See [reference handling and limits](docs/references.md).
 
+You can also select a local source folder as a read-only reference for a **new** project. Its supported text files and relative paths are sent to every selected Codex agent; the original project is never used as the output workspace or changed. The dashboard shows the files received and QA evidence linking the reference to the new output. See [source folder limits](docs/references.md#local-source-as-reference).
+
 For smaller offline demonstrations, run `python -m coding_platform.cli demo`, `m2-demo`, or `m3-demo` from the repository root in Ubuntu. The first creates a calculator and runs pytest; M2 demonstrates a failed test followed by repair; M3 builds and merges backend and frontend branches.
 
 To remove an old project, use the trash button beside its name and confirm. This deletes its runs, events, generated files, and artifacts. Cancel or complete every run in the project first; the API rejects deletion while work is active.

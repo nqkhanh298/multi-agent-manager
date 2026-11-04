@@ -25,7 +25,12 @@ from coding_platform.codex_run import AUTO_START_TASK, CODEX_TASKS
 from coding_platform.contracts import ToolCall
 from coding_platform.sandbox import DockerSandbox, SandboxUnavailable
 from coding_platform.codex_roles import read_assignments, validate_assignments, write_assignments
-from coding_platform.references import load_references, prepare_references, save_references
+from coding_platform.references import (
+    load_references,
+    prepare_references,
+    prepare_source_reference,
+    save_references,
+)
 
 from .budget import BudgetLimits
 from .db import SessionLocal, get_session
@@ -73,11 +78,17 @@ class RunCreate(BaseModel):
     prompt: str = Field(min_length=1, max_length=10000)
     engine: str = Field(default="codex_auto", pattern="^(demo|codex|codex_web|codex_auto)$")
     references: list["ReferenceInput"] = Field(default_factory=list, max_length=3)
+    source_files: list["SourceFileInput"] = Field(default_factory=list, max_length=40)
 
 
 class ReferenceInput(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     data_base64: str = Field(min_length=1, max_length=2_700_000)
+
+
+class SourceFileInput(BaseModel):
+    path: str = Field(min_length=1, max_length=500)
+    data_base64: str = Field(min_length=1, max_length=100_000)
 
 
 class CodexLoginRequest(BaseModel):
@@ -281,10 +292,15 @@ def create_run(
     session: Session = Depends(get_session),
     user: User = Depends(current_user),
 ) -> dict:
-    if body.references and not body.engine.startswith("codex"):
+    if (body.references or body.source_files) and not body.engine.startswith("codex"):
         raise HTTPException(422, "references require a Codex run")
     try:
         references = prepare_references([item.model_dump() for item in body.references])
+        source_reference = prepare_source_reference(
+            [item.model_dump() for item in body.source_files]
+        )
+        if source_reference:
+            references.append(source_reference)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     if (

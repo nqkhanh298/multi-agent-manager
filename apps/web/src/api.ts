@@ -59,10 +59,10 @@ export const api = {
     request<{ deleted: boolean; removed_runs: number; cleanup_failed: boolean }>(`/api/projects/${projectId}`, token, { method: 'DELETE' }),
   runs: (token: string, projectId: string) =>
     request<Run[]>(`/api/projects/${projectId}/runs`, token),
-  createRun: (token: string, projectId: string, prompt: string, references: Array<{ name: string; data_base64: string }> = []) =>
+  createRun: (token: string, projectId: string, prompt: string, references: Array<{ name: string; data_base64: string }> = [], sourceFiles: Array<{ path: string; data_base64: string }> = []) =>
     request<Run>(`/api/projects/${projectId}/runs`, token, {
       method: 'POST',
-      body: JSON.stringify({ prompt, references }),
+      body: JSON.stringify({ prompt, references, source_files: sourceFiles }),
     }),
   references: (token: string, runId: string) => request<RunReference[]>(`/api/runs/${runId}/references`, token),
   terminalPreview: (token: string, runId: string, stdin: string) =>

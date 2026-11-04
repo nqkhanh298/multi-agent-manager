@@ -132,6 +132,12 @@ def test_codex_run_requires_account_and_creates_role_tasks(monkeypatch, tmp_path
                         "data_base64": base64.b64encode(reference_text.encode()).decode(),
                     }
                 ],
+                "source_files": [
+                    {
+                        "path": "old-calculator/app.py",
+                        "data_base64": base64.b64encode(b"print(2 + 2)").decode(),
+                    }
+                ],
             },
         )
         assert auto_response.status_code == 202
@@ -191,6 +197,9 @@ def test_codex_run_requires_account_and_creates_role_tasks(monkeypatch, tmp_path
         assert attached.status_code == 200
         assert attached.json()[0]["name"] == "requirements.md"
         assert attached.json()[0]["text"] == reference_text
+        assert attached.json()[1]["kind"] == "source"
+        assert "[FILE old-calculator/app.py]" in attached.json()[1]["text"]
+        assert not (tmp_path / "m3-runs" / auto_id / "repo").exists()
         assert client.get(f"/api/runs/{auto_id}/references").status_code == 401
         assert (tmp_path / "m3-runs" / auto_id / "references.json").is_file()
         snapshot = tmp_path / "m3-runs" / auto_id / "role-assignments.json"

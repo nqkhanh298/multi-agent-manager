@@ -256,11 +256,28 @@ test('attaches a reference to the prompt and shows the saved text', async ({ pag
   })
   await expect(page.getByText('requirements.md').first()).toBeVisible()
   await page.getByRole('button', { name: /Bắt đầu chạy/ }).click()
-  await expect(page.getByText('Tài liệu tham chiếu (1)')).toBeVisible()
+  await expect(page.getByText('Tài liệu và source tham chiếu (1)')).toBeVisible()
   await page.getByText('requirements.md').last().click()
   await expect(page.getByText('The game must have a blue button.')).toBeVisible()
   expect(submitted?.references[0].name).toBe('requirements.md')
   expect(Buffer.from(submitted!.references[0].data_base64, 'base64').toString()).toBe('The game must have a blue button.')
+})
+
+test('sends a local source folder as reference for a new run', async ({ page }) => {
+  await mockPlatform(page)
+  let submitted: { source_files: Array<{ path: string; data_base64: string }> } | null = null
+  await page.route('**/api/projects/p1/runs', async (route) => {
+    if (route.request().method() === 'POST') submitted = route.request().postDataJSON()
+    return route.fallback()
+  })
+  await page.goto('/')
+  await page.locator('#run-prompt').fill('Create a new game inspired by the old one')
+  await page.locator('#run-source').setInputFiles('e2e/fixtures/reference-source')
+  await expect(page.getByText('reference-source/ · 1 file')).toBeVisible()
+  await page.getByRole('button', { name: /Bắt đầu chạy/ }).click()
+  expect(submitted?.source_files).toHaveLength(1)
+  expect(submitted?.source_files[0].path).toBe('reference-source/game.py')
+  expect(Buffer.from(submitted!.source_files[0].data_base64, 'base64').toString()).toContain('score')
 })
 
 test('keeps eight specialist stages readable in a horizontal workflow', async ({ page }) => {

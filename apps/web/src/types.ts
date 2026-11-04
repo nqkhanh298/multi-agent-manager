@@ -48,6 +48,8 @@ export interface RunReference {
   sha256: string
   chars: number
   text: string
+  kind?: 'source'
+  files_count?: number
 }
 
 export interface ReferenceCheck {
