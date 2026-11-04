@@ -1,6 +1,8 @@
 import type {
   Approval,
   Artifact,
+  CodexAccount,
+  CodexLogin,
   Project,
   Run,
   RunEvent,
@@ -34,6 +36,13 @@ async function request<T>(path: string, token: string, init: RequestInit = {}): 
 }
 
 export const api = {
+  codexAccount: (token: string) => request<CodexAccount>('/api/codex/account', token),
+  codexLogin: (token: string, method: 'browser' | 'device') =>
+    request<CodexLogin>('/api/codex/login', token, {
+      method: 'POST',
+      body: JSON.stringify({ method }),
+    }),
+  codexLogout: (token: string) => request<{ connected: boolean }>('/api/codex/logout', token, { method: 'POST' }),
   projects: (token: string) => request<Project[]>('/api/projects', token),
   createProject: (token: string, name: string) =>
     request<Project>('/api/projects', token, {
@@ -42,10 +51,10 @@ export const api = {
     }),
   runs: (token: string, projectId: string) =>
     request<Run[]>(`/api/projects/${projectId}/runs`, token),
-  createRun: (token: string, projectId: string, prompt: string) =>
+  createRun: (token: string, projectId: string, prompt: string, engine: 'demo' | 'codex' = 'demo') =>
     request<Run>(`/api/projects/${projectId}/runs`, token, {
       method: 'POST',
-      body: JSON.stringify({ prompt }),
+      body: JSON.stringify({ prompt, engine }),
     }),
   run: (token: string, runId: string) => request<Run>(`/api/runs/${runId}`, token),
   tasks: (token: string, runId: string) => request<Task[]>(`/api/runs/${runId}/tasks`, token),

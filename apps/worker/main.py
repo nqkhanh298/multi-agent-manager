@@ -18,7 +18,16 @@ from apps.api.budget import (
     run_budget_reason,
 )
 from apps.api.db import SessionLocal
-from apps.api.models import AgentExecution, Event, Outbox, Run, Task, ToolCallRecord, now_utc
+from apps.api.models import (
+    AgentExecution,
+    Event,
+    Outbox,
+    Project,
+    Run,
+    Task,
+    ToolCallRecord,
+    now_utc,
+)
 from apps.api.service import (
     append_event,
     change_status,
@@ -28,6 +37,7 @@ from apps.api.service import (
 )
 from coding_platform.contracts import ToolCall, ToolResult
 from coding_platform.m3 import M3Runner
+from coding_platform.codex_run import CodexRunRunner
 from coding_platform.sandbox import DockerSandbox
 
 QUEUE = "m4:queue"
@@ -75,6 +85,9 @@ def record_m3_event(run_id: str, event_type: str, payload: dict) -> None:
             execution = session.scalar(
                 select(AgentExecution).where(AgentExecution.task_id == task.id)
             )
+            if execution is None and event_type == "task.status" and payload["status"] == "RUNNING":
+                execution = AgentExecution(task_id=task.id, model="Codex")
+                session.add(execution)
             if execution is not None and event_type == "task.status":
                 execution.status = payload["status"]
                 if payload["status"] in {"COMPLETED", "FAILED", "CANCELLED"}:
@@ -173,6 +186,8 @@ def process_run(run_id: str) -> str:
             change_status(session, run, "BLOCKED", reason)
             return "BLOCKED"
         prompt = run.prompt
+        engine = run.engine
+        owner_id = session.scalar(select(Project.owner_id).where(Project.id == run.project_id))
         run.heartbeat_at = now_utc()
         change_status(session, run, "RUNNING")
     stop_heartbeat = threading.Event()
@@ -195,16 +210,24 @@ def process_run(run_id: str) -> str:
                 run_id,
             )
 
-        report = M3Runner(
-            data_root(),
-            max_parallel=int(os.getenv("MAX_PARALLEL_TASKS", "2")),
-            sandbox_factory=sandbox_for,
-        ).run(
-            prompt,
-            run_id=run_id,
-            control=lambda: control_for(run_id),
-            on_event=lambda kind, payload: record_m3_event(run_id, kind, payload),
-        )
+        if engine == "codex":
+            report = CodexRunRunner(
+                data_root(),
+                event=lambda kind, payload: record_m3_event(run_id, kind, payload),
+                control=lambda: control_for(run_id),
+                codex_home=data_root() / "codex-accounts" / owner_id,
+            ).run(prompt, run_id)
+        else:
+            report = M3Runner(
+                data_root(),
+                max_parallel=int(os.getenv("MAX_PARALLEL_TASKS", "2")),
+                sandbox_factory=sandbox_for,
+            ).run(
+                prompt,
+                run_id=run_id,
+                control=lambda: control_for(run_id),
+                on_event=lambda kind, payload: record_m3_event(run_id, kind, payload),
+            )
         with SessionLocal.begin() as session:
             run = session.scalar(select(Run).where(Run.id == run_id).with_for_update())
             if run.status != "RUNNING":

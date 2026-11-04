@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import subprocess
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -17,6 +18,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from coding_platform.m3 import MockM3Coordinator
+from coding_platform.codex_app_server import CodexAppServer, CodexUnavailable
+from coding_platform.codex_run import CODEX_TASKS
 
 from .budget import BudgetLimits
 from .db import SessionLocal, get_session
@@ -43,6 +46,15 @@ from .service import (
 
 app = FastAPI(title="AI Coding Platform API", version="0.6.0")
 bearer = HTTPBearer(auto_error=False)
+_codex_clients: dict[str, CodexAppServer] = {}
+_codex_clients_lock = threading.Lock()
+
+
+def codex_client(user: User) -> CodexAppServer:
+    with _codex_clients_lock:
+        if user.id not in _codex_clients:
+            _codex_clients[user.id] = CodexAppServer(data_root() / "codex-accounts" / user.id)
+        return _codex_clients[user.id]
 
 
 class ProjectCreate(BaseModel):
@@ -52,6 +64,11 @@ class ProjectCreate(BaseModel):
 
 class RunCreate(BaseModel):
     prompt: str = Field(min_length=1, max_length=10000)
+    engine: str = Field(default="demo", pattern="^(demo|codex)$")
+
+
+class CodexLoginRequest(BaseModel):
+    method: str = Field(default="browser", pattern="^(browser|device)$")
 
 
 class ApprovalDecision(BaseModel):
@@ -92,13 +109,14 @@ def run_payload(run: Run) -> dict:
         "id": run.id,
         "project_id": run.project_id,
         "prompt": run.prompt,
+        "engine": run.engine,
         "status": run.status,
         "version": run.version,
         "created_at": run.created_at,
         "updated_at": run.updated_at,
         "report_ref": f"/api/runs/{run.id}/report" if run.report_ref else None,
-        "budget_usd": run.budget_usd,
-        "spent_usd": run.spent_usd,
+        "budget_usd": None if run.engine == "codex" else run.budget_usd,
+        "spent_usd": None if run.engine == "codex" else run.spent_usd,
         "max_seconds": run.max_seconds,
     }
 
@@ -106,6 +124,44 @@ def run_payload(run: Run) -> dict:
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/api/codex/account")
+def codex_account(user: User = Depends(current_user)) -> dict:
+    try:
+        account = codex_client(user).account().get("account")
+    except CodexUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+    return {
+        "connected": bool(account and account.get("type") == "chatgpt"),
+        "email": account.get("email") if account and account.get("type") == "chatgpt" else None,
+        "plan_type": account.get("planType")
+        if account and account.get("type") == "chatgpt"
+        else None,
+    }
+
+
+@app.post("/api/codex/login")
+def codex_login(body: CodexLoginRequest, user: User = Depends(current_user)) -> dict:
+    try:
+        login = codex_client(user).begin_login(body.method)
+    except CodexUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+    return {
+        "login_id": login.get("loginId"),
+        "auth_url": login.get("authUrl"),
+        "verification_url": login.get("verificationUrl"),
+        "user_code": login.get("userCode"),
+    }
+
+
+@app.post("/api/codex/logout")
+def codex_logout(user: User = Depends(current_user)) -> dict:
+    try:
+        codex_client(user).logout()
+    except CodexUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+    return {"connected": False}
 
 
 @app.post("/api/projects", status_code=201)
@@ -147,18 +203,28 @@ def create_run(
 ) -> dict:
     if owned_project(session, project_id, user) is None:
         raise HTTPException(404, "project not found")
-    plan = MockM3Coordinator().create_plan(body.prompt)
+    if body.engine == "codex":
+        try:
+            account = codex_client(user).account().get("account")
+        except CodexUnavailable as exc:
+            raise HTTPException(503, str(exc)) from exc
+        if not account or account.get("type") != "chatgpt":
+            raise HTTPException(409, "connect your ChatGPT account to Codex first")
+        plan = CODEX_TASKS
+    else:
+        plan = MockM3Coordinator().create_plan(body.prompt).tasks
     limits = BudgetLimits.from_env()
     run = Run(
         project_id=project_id,
         prompt=body.prompt,
+        engine=body.engine,
         budget_usd=limits.usd,
         spent_usd=0.0,
         max_seconds=limits.seconds,
     )
     session.add(run)
     session.flush()
-    for spec in plan.tasks:
+    for spec in plan:
         session.add(
             Task(
                 run_id=run.id,
@@ -227,6 +293,7 @@ def list_tasks(
             "id": task.task_key,
             "title": task.title,
             "agent_role": task.agent_role,
+            "model": executions[task.id].model if task.id in executions else None,
             "status": task.status,
             "depends_on": task.dependencies,
             "workspace_ref": None,

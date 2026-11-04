@@ -206,6 +206,22 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .new-workspace-hint strong { color: #e2e8ff; font-size: 15px; }
 .new-workspace-hint p { margin: 0; font-size: 12px; }
 .banner-error { background: #522937; border: 1px solid #ab4e66; color: #ffd5dd; border-radius: 8px; padding: 10px 13px; margin-bottom: 14px; font-size: 12px; display: flex; align-items: center; justify-content: space-between; }
+.codex-connection { margin-bottom: 12px; padding: 13px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.codex-connection-main { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 210px; color: #a59cff; }
+.codex-connection-main div { display: flex; flex-direction: column; gap: 3px; }
+.codex-connection-main strong { color: #edf0ff; font-size: 13px; }
+.codex-connection-main small, .codex-login-instructions small { color: #9aa9c8; font-size: 11px; }
+.codex-connection-actions { display: flex; gap: 7px; flex-wrap: wrap; }
+.codex-connection-actions button { border: 1px solid #606b9a; background: #252f54; color: #e8edff; border-radius: 7px; padding: 8px 10px; font-size: 11px; cursor: pointer; }
+.codex-connection-actions button:disabled { opacity: .5; cursor: wait; }
+.codex-login-instructions { width: 100%; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; border-top: 1px solid #34425e; padding-top: 10px; }
+.codex-login-instructions a { color: #b7a9ff; display: inline-flex; gap: 5px; align-items: center; font-size: 11px; }
+.codex-login-instructions code { background: #101930; padding: 5px 8px; border-radius: 5px; letter-spacing: .08em; }
+.codex-error { margin: 0; color: #ffadbd; width: 100%; font-size: 11px; }
+.engine-choice { display: flex; flex-wrap: wrap; gap: 14px; margin: 7px 0 12px; }
+.engine-choice label { display: inline-flex; align-items: center; gap: 6px; color: #b8c4e1; font-size: 11px; cursor: pointer; }
+.engine-choice input { accent-color: #7764f3; }
+.flow-card.role-coordinator, .flow-card.role-researcher, .flow-card.role-architect, .flow-card.role-designer, .flow-card.role-developer, .flow-card.role-writer, .flow-card.role-release { border-color: #7567cb; background: linear-gradient(135deg, #25204cf0, #172543f0); }
 .banner-error button { background: transparent; color: inherit; border: 0; display: inline-flex; }
 .modal-backdrop { position: fixed; z-index: 100; inset: 0; background: #030615bf; display: grid; place-items: center; padding: 20px; }
 .approval-modal { width: min(460px, 100%); background: #151e35; border: 1px solid #4a5680; border-radius: 13px; box-shadow: 0 20px 80px #0009; padding: 18px; }

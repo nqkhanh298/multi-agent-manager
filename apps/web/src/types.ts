@@ -30,20 +30,35 @@ export interface Run {
   id: string
   project_id: string
   prompt: string
+  engine?: 'demo' | 'codex'
   status: RunStatus
   version: number
   created_at: string
   updated_at: string
   report_ref: string | null
-  budget_usd?: number
-  spent_usd?: number
+  budget_usd?: number | null
+  spent_usd?: number | null
   max_seconds?: number
+}
+
+export interface CodexAccount {
+  connected: boolean
+  email: string | null
+  plan_type: string | null
+}
+
+export interface CodexLogin {
+  login_id: string | null
+  auth_url: string | null
+  verification_url: string | null
+  user_code: string | null
 }
 
 export interface Task {
   id: string
   title: string
   agent_role: string
+  model?: string | null
   status: TaskStatus
   depends_on: string[]
   workspace_ref: string | null

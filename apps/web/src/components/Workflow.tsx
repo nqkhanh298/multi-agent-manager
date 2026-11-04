@@ -7,20 +7,34 @@ import {
   ReactFlow,
   type NodeProps,
 } from '@xyflow/react'
-import { Braces, Check, Code2, FlaskConical, LoaderCircle, Monitor, X } from 'lucide-react'
+import { Braces, Check, Code2, FlaskConical, LoaderCircle, Monitor, X, Search, DraftingCompass, Palette, FileText, PackageCheck, Network } from 'lucide-react'
 import { buildFlow, type TaskNode } from '../workflow'
 import type { Task } from '../types'
 
 const roleIcons = {
+  coordinator: Network,
+  researcher: Search,
+  architect: DraftingCompass,
+  designer: Palette,
+  developer: Code2,
   backend_dev: Code2,
   frontend_dev: Monitor,
   qa: FlaskConical,
+  writer: FileText,
+  release: PackageCheck,
 }
 
 const roleNames: Record<string, string> = {
+  coordinator: 'Coordinator',
+  researcher: 'Researcher',
+  architect: 'Architect',
+  designer: 'Designer',
+  developer: 'Developer',
   backend_dev: 'Backend Dev',
   frontend_dev: 'Frontend Dev',
   qa: 'QA',
+  writer: 'Writer',
+  release: 'Release',
 }
 
 const TaskCard = memo(function TaskCard({ data, selected }: NodeProps<TaskNode>) {

@@ -19,6 +19,8 @@ async function mockPlatform(page: Page) {
     const request = route.request()
     const path = new URL(request.url()).pathname
     const method = request.method()
+    if (path === '/api/codex/account') return route.fulfill(json({ connected: false, email: null, plan_type: null }))
+    if (path === '/api/codex/login') return route.fulfill(json({ login_id: 'login-1', auth_url: null, verification_url: 'https://auth.openai.com/codex/device', user_code: 'ABCD-1234' }))
     if (path === '/api/projects' && method === 'GET') return route.fulfill(json(projects))
     if (path === '/api/projects' && method === 'POST') {
       const project = { id: `p${projects.length + 1}`, name: request.postDataJSON().name as string, description: '', created_at: new Date().toISOString() }
@@ -70,6 +72,7 @@ test('shows task graph, progress, code and test output from API data', async ({ 
 test('creates a run and controls its lifecycle', async ({ page }) => {
   await mockPlatform(page)
   await page.goto('/')
+  await page.getByRole('radio', { name: /Demo Task Manager/ }).check()
   await page.getByLabel('Bạn muốn hệ thống xây gì?').fill('Ứng dụng mới')
   await page.getByRole('button', { name: /Bắt đầu chạy/ }).click()
   await expect(page.getByText('Ứng dụng mới').first()).toBeVisible()
@@ -81,6 +84,14 @@ test('creates a run and controls its lifecycle', async ({ page }) => {
   const download = page.waitForEvent('download')
   await page.getByRole('button', { name: /Tải mã nguồn/ }).click()
   expect((await download).suggestedFilename()).toContain('source.zip')
+})
+
+test('offers ChatGPT connection before a real Codex run', async ({ page }) => {
+  await mockPlatform(page)
+  await page.goto('/')
+  await expect(page.getByRole('button', { name: /Bắt đầu chạy/ })).toBeDisabled()
+  await page.getByRole('button', { name: 'Dùng mã thiết bị' }).click()
+  await expect(page.getByText('ABCD-1234')).toBeVisible()
 })
 
 test('requires a deliberate approval decision', async ({ page }) => {

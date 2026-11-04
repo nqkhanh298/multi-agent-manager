@@ -55,6 +55,7 @@ class Run(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
     prompt: Mapped[str] = mapped_column(Text)
+    engine: Mapped[str] = mapped_column(String(20), default="demo")
     status: Mapped[str] = mapped_column(String(32), default="CREATED")
     version: Mapped[int] = mapped_column(Integer, default=0)
     pause_requested: Mapped[bool] = mapped_column(default=False)

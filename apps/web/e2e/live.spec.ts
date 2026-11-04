@@ -12,6 +12,7 @@ test('creates a real run and displays its source, tests and artifact', async ({ 
   await page.getByRole('button', { name: 'Tạo dự án' }).click()
   await page.getByRole('textbox', { name: 'Tên dự án mới' }).fill(`M5 Live ${Date.now()}`)
   await page.getByRole('textbox', { name: 'Tên dự án mới' }).press('Enter')
+  await page.getByRole('radio', { name: /Demo Task Manager/ }).check()
   await page.getByLabel('Bạn muốn hệ thống xây gì?').fill('Xây ứng dụng quản lý công việc')
   await page.getByRole('button', { name: /Bắt đầu chạy/ }).click()
   await expect(page.getByText('Backend Dev').first()).toBeVisible({ timeout: 15_000 })
