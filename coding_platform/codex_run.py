@@ -1,4 +1,4 @@
-"""Real Codex role sessions for local CLI and browser applications."""
+"""Real Codex role sessions for applications and research reports."""
 
 import json
 import subprocess
@@ -37,6 +37,101 @@ CODEX_TASKS = (
     CodexTask("T7", "Viết hướng dẫn", "writer", ("T6",), ("README written",)),
     CodexTask("T8", "Đóng gói bàn giao", "release", ("T7",), ("Source ZIP created",)),
 )
+
+AUTO_START_TASK = CodexTask(
+    "T1", "Điều phối và lập kế hoạch", "coordinator", (), ("Plan selected",)
+)
+TASK_TITLES = {
+    "researcher": "Nghiên cứu vấn đề",
+    "architect": "Thiết kế kiến trúc",
+    "designer": "Thiết kế trải nghiệm",
+    "developer": "Phát triển ứng dụng",
+    "qa": "Kiểm tra kết quả",
+    "writer": "Viết tài liệu",
+    "release": "Đóng gói bàn giao",
+}
+APP_ROLES = ("researcher", "architect", "designer", "developer", "qa", "writer", "release")
+REPORT_ROLES = ("researcher", "designer", "writer", "qa", "release")
+PLAN_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "target": {"type": "string", "enum": ["web", "python_cli", "research_report"]},
+        "roles": {"type": "array", "items": {"type": "string", "enum": list(TASK_TITLES)}},
+        "summary": {"type": "string"},
+    },
+    "required": ["target", "roles", "summary"],
+    "additionalProperties": False,
+}
+REPORT_REVIEW_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "verdict": {"type": "string", "enum": ["PASS", "FAIL"]},
+        "summary": {"type": "string"},
+        "reference_checks": REFERENCE_REVIEW_SCHEMA["properties"]["reference_checks"],
+    },
+    "required": ["verdict", "summary", "reference_checks"],
+    "additionalProperties": False,
+}
+
+
+def parse_agent_plan(answer: str) -> tuple[str, tuple[CodexTask, ...], str]:
+    data = json.loads(answer)
+    if not isinstance(data, dict) or set(data) != {"target", "roles", "summary"}:
+        raise ValueError("Coordinator returned an invalid plan")
+    target, roles, summary = data["target"], data["roles"], data["summary"]
+    if (
+        not isinstance(target, str)
+        or target not in {"web", "python_cli", "research_report"}
+        or not isinstance(roles, list)
+    ):
+        raise ValueError("Coordinator returned an unsupported target or role list")
+    allowed = REPORT_ROLES if target == "research_report" else APP_ROLES
+    required = (
+        {"researcher", "writer", "qa", "release"}
+        if target == "research_report"
+        else {"developer", "qa", "release"}
+    )
+    if (
+        any(not isinstance(role, str) for role in roles)
+        or len(roles) != len(set(roles))
+        or any(role not in allowed for role in roles)
+        or not required.issubset(roles)
+        or not isinstance(summary, str)
+        or not summary.strip()
+    ):
+        raise ValueError("Coordinator selected incomplete or invalid agent roles")
+    ordered = [role for role in allowed if role in roles]
+    tasks = [AUTO_START_TASK]
+    for role in ordered:
+        previous = tasks[-1].id
+        tasks.append(
+            CodexTask(
+                f"T{len(tasks) + 1}",
+                TASK_TITLES[role],
+                role,
+                (previous,),
+                ("Role output recorded",),
+            )
+        )
+    return target, tuple(tasks), summary.strip()[:2000]
+
+
+def task_payload(task: CodexTask) -> dict:
+    return {
+        "id": task.id,
+        "title": task.title,
+        "agent": task.agent,
+        "depends_on": list(task.depends_on),
+        "acceptance_criteria": list(task.acceptance_criteria),
+    }
+
+
+def validate_report(markdown: str) -> str:
+    content = markdown.strip()
+    if len(content) < 200 or len(content) > 100_000 or not content.startswith("#"):
+        raise ValueError("Writer did not produce a complete Markdown research report")
+    return content + "\n"
+
 
 DEVELOPER_SCHEMA = {
     "type": "object",
@@ -208,6 +303,9 @@ class CodexRunRunner:
             {key: item[key] for key in ("id", "name", "sha256", "chars")} for item in references
         ]
         context: dict[str, str] = {}
+        selected_tasks: tuple[CodexTask, ...] = CODEX_TASKS
+        if self.target == "auto" and report.get("plan"):
+            _, selected_tasks, _ = parse_agent_plan(json.dumps(report["plan"]))
         resolved_models: dict[str, str] = {}
         for role in (
             "coordinator",
@@ -262,23 +360,81 @@ class CodexRunRunner:
             account = client.account().get("account")
             if not account or account.get("type") != "chatgpt":
                 raise CodexUnavailable("ChatGPT account is not connected in this WSL environment")
-            if self.target == "auto" and report["target"] is None:
+            if self.target == "auto" and not report.get("plan"):
+                task = AUTO_START_TASK
                 self.event("run.target_selection", {"status": "RUNNING"})
-                selected = call_role(
-                    "target_selector",
-                    Path(__file__).resolve().parents[1] / ".agents/skills/target_selector/SKILL.md",
-                    f"Choose the application preview target for this request:\n{prompt}",
-                    schema=TARGET_SCHEMA,
-                    activity=lambda phase, detail: self.event(
-                        "run.target_activity", {"phase": phase, "detail": detail}
-                    ),
+                plan_skill = (
+                    Path(__file__).resolve().parents[1] / ".agents/skills/coordinator/SKILL.md"
                 )
-                report["target"] = parse_target(selected)
+
+                def planning_activity(phase: str, detail: str) -> None:
+                    if phase == "model":
+                        self.event("task.model", {"task_id": "T1", "model": detail})
+                    else:
+                        self.event(
+                            "task.activity",
+                            {
+                                "task_id": "T1",
+                                "role": "coordinator",
+                                "phase": phase,
+                                "detail": detail,
+                            },
+                        )
+
+                self.event(
+                    "task.status",
+                    {"task_id": "T1", "status": "RUNNING", **self.assignments["coordinator"]},
+                )
+                selected = call_role(
+                    "coordinator",
+                    plan_skill,
+                    "Analyze the user's request and choose the smallest suitable team from: "
+                    "Researcher (investigation), Architect (software architecture), "
+                    "Designer (visual/interaction design), Developer (software), "
+                    "Writer (documentation), QA (verification), Release (handoff). "
+                    "Choose research_report when the user asks for research, analysis, or a written "
+                    "report without requesting software. Choose web for visual apps and python_cli "
+                    "only for explicit terminal programs. For a report include researcher, writer, "
+                    "qa, release; add designer only when visual layout is requested. For software "
+                    "include developer, qa, release; add the other roles only when they add value. "
+                    "Return only the requested JSON plan. User request:\n" + prompt,
+                    schema=PLAN_SCHEMA,
+                    activity=planning_activity,
+                )
+                target, selected_tasks, summary = parse_agent_plan(selected)
+                report["target"] = target
+                report["plan"] = {
+                    "target": target,
+                    "roles": [task.agent for task in selected_tasks[1:]],
+                    "summary": summary,
+                }
                 save()
-                self.event("run.target_selected", {"target": report["target"]})
+                self.event(
+                    "run.plan",
+                    {
+                        "target": target,
+                        "summary": summary,
+                        "tasks": [task_payload(task) for task in selected_tasks[1:]],
+                    },
+                )
+                self.event("run.target_selected", {"target": target})
+                context["coordinator"] = summary
+                (repo / "docs").mkdir(exist_ok=True)
+                (repo / "docs" / "coordinator.md").write_text(summary, encoding="utf-8")
+                report["tasks"].append(
+                    {
+                        "task_id": "T1",
+                        "status": "COMPLETED",
+                        "provider": "codex",
+                        "model": self.assignments["coordinator"]["model"],
+                    }
+                )
+                completed.add("T1")
+                self.event("task.status", {"task_id": "T1", "status": "COMPLETED"})
+                save()
             selected_target = report["target"]
 
-            for task in CODEX_TASKS:
+            for task in selected_tasks:
                 if task.id in completed:
                     continue
                 requested = self.control()
@@ -309,7 +465,10 @@ class CodexRunRunner:
                 if not skill.is_file():
                     raise FileNotFoundError(f"missing {task.agent} skill")
                 target_brief = (
-                    "Standalone interactive browser application using plain HTML, CSS, and JavaScript. "
+                    "A sourced Markdown research report. Do not create an application. "
+                    "Separate verified facts, analysis, uncertainties, and recommendations."
+                    if selected_target == "research_report"
+                    else "Standalone interactive browser application using plain HTML, CSS, and JavaScript. "
                     "The user must be able to play through a visual interface in the Preview tab. "
                     "Use no external packages or network resources."
                     if selected_target == "web"
@@ -318,7 +477,72 @@ class CodexRunRunner:
                 brief = f"Target: {target_brief}\n\nUser request:\n{prompt}\n\n" + "\n\n".join(
                     f"{role.upper()}:\n{text[:8000]}" for role, text in context.items()
                 )
-                if task.agent == "developer":
+                if selected_target == "research_report" and task.agent == "writer":
+                    answer = call_role(
+                        "writer",
+                        skill,
+                        brief
+                        + "\n\nWrite the complete final research report in Markdown. Use source links "
+                        "from Researcher only when provided; never invent sources. Include a "
+                        "method, findings, limitations, and conclusion. Make it useful to the user.",
+                        activity=activity,
+                    )
+                    report_text = validate_report(answer)
+                    (repo / "REPORT.md").write_text(report_text, encoding="utf-8")
+                    context["writer"] = report_text
+                elif selected_target == "research_report" and task.agent == "qa":
+                    document = (repo / "REPORT.md").read_text(encoding="utf-8")
+                    answer = call_role(
+                        "qa",
+                        skill,
+                        brief
+                        + "\n\nReview REPORT.md against the user's request and Researcher's notes. "
+                        "Identify unsupported claims, missing topics, and citation gaps. "
+                        "Return JSON verdict PASS only if the report answers the request. "
+                        "For each attached reference, quote its exact text and show an exact "
+                        "matching passage from REPORT.md; use an empty list when none attached. "
+                        "Do not claim external source checks you did not perform.\n\nREPORT.md:\n"
+                        + document,
+                        schema=REPORT_REVIEW_SCHEMA,
+                        activity=activity,
+                    )
+                    review = json.loads(answer)
+                    if review["verdict"] != "PASS":
+                        raise ValueError(
+                            "QA did not approve the research report: "
+                            + str(review.get("summary", ""))[:500]
+                        )
+                    report["reference_checks"] = verify_reference_review(
+                        answer, references, {"REPORT.md": document}
+                    )
+                    (repo / "docs").mkdir(exist_ok=True)
+                    (repo / "docs" / "qa.md").write_text(
+                        str(review["summary"])[:100_000], encoding="utf-8"
+                    )
+                    context["qa"] = str(review["summary"])
+                    report["integration"] = {
+                        "exit_code": 0,
+                        "stdout": str(review["summary"])[:8000],
+                        "stderr": "",
+                    }
+                    if references:
+                        self.event(
+                            "references.verified", {"ids": [item["id"] for item in references]}
+                        )
+                elif selected_target == "research_report" and task.agent == "release":
+                    answer = call_role(
+                        "release",
+                        skill,
+                        brief
+                        + "\n\nSummarize the report handoff and limitations. Do not discuss source code or Docker tests.",
+                        activity=activity,
+                    )
+                    if not answer.strip():
+                        raise ValueError("Release returned an empty report handoff")
+                    (repo / "docs").mkdir(exist_ok=True)
+                    (repo / "docs" / "release.md").write_text(answer[:100_000], encoding="utf-8")
+                    context["release"] = answer
+                elif task.agent == "developer":
                     web = selected_target == "web"
                     answer = call_role(
                         task.agent,
@@ -447,7 +671,7 @@ class CodexRunRunner:
                         "status": "COMPLETED",
                         "provider": assignment["provider"],
                         "model": resolved_models.get(task.id) or assignment["model"],
-                        "test_stdout": report["integration"]["stdout"]
+                        "test_stdout": (report.get("integration") or {}).get("stdout", "")
                         if task.agent == "qa"
                         else "",
                     }

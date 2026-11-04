@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 
 from coding_platform.m3 import MockM3Coordinator
 from coding_platform.codex_app_server import CodexAppServer, CodexUnavailable
-from coding_platform.codex_run import CODEX_TASKS
+from coding_platform.codex_run import AUTO_START_TASK, CODEX_TASKS
 from coding_platform.contracts import ToolCall
 from coding_platform.sandbox import DockerSandbox, SandboxUnavailable
 from coding_platform.codex_roles import read_assignments, validate_assignments, write_assignments
@@ -304,7 +304,7 @@ def create_run(
             raise HTTPException(503, str(exc)) from exc
         if not account or account.get("type") != "chatgpt":
             raise HTTPException(409, "connect your ChatGPT account to Codex first")
-        plan = CODEX_TASKS
+        plan = (AUTO_START_TASK,) if body.engine == "codex_auto" else CODEX_TASKS
     else:
         plan = MockM3Coordinator().create_plan(body.prompt).tasks
     limits = BudgetLimits.from_env()
@@ -616,6 +616,9 @@ def get_report(
     report = json.loads(report_path.read_text(encoding="utf-8"))
     return {
         "target": report.get("target"),
+        "plan": report.get("plan"),
+        "reason": report.get("reason"),
+        "reference_checks": report.get("reference_checks", []),
         "status": report["status"],
         "parallel_overlap_ms": report.get("parallel_overlap_ms", 0),
         "tasks": [
@@ -827,6 +830,27 @@ def download_source(
     if hashlib.sha256(target.read_bytes()).hexdigest() != artifact.sha256:
         raise HTTPException(409, "source artifact checksum mismatch")
     return FileResponse(target, media_type="application/zip", filename=f"{run_id}-source.zip")
+
+
+@app.get("/api/runs/{run_id}/download-report")
+def download_report(
+    run_id: str, session: Session = Depends(get_session), user: User = Depends(current_user)
+) -> FileResponse:
+    run = owned_run(session, run_id, user)
+    if run is None:
+        raise HTTPException(404, "run not found")
+    report_path = data_root() / "m3-runs" / run_id / "report.json"
+    target = data_root() / "m3-runs" / run_id / "repo" / "REPORT.md"
+    if (
+        run.status != "COMPLETED"
+        or not report_path.is_file()
+        or json.loads(report_path.read_text(encoding="utf-8")).get("target") != "research_report"
+        or not target.is_file()
+    ):
+        raise HTTPException(404, "research report not ready")
+    return FileResponse(
+        target, media_type="text/markdown; charset=utf-8", filename=f"{run_id}-report.md"
+    )
 
 
 @app.websocket("/ws/runs/{run_id}")

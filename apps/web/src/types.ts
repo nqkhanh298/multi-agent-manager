@@ -131,7 +131,8 @@ export interface SourceContent {
 }
 
 export interface RunReport {
-  target?: 'web' | 'python_cli' | null
+  target?: 'web' | 'python_cli' | 'research_report' | null
+  plan?: { target: string; roles: string[]; summary: string }
   status: string
   reason?: string
   parallel_overlap_ms: number

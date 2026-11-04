@@ -110,6 +110,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .reference-evidence { margin-top: 8px; padding: 8px; border-left: 2px solid #56d4a1; background: #172744; color: #dbe7f8; font-size: 11px; }
 .reference-evidence p { margin: 5px 0; }
 .reference-failure { margin: 10px 14px; padding: 9px; border: 1px solid #a75269; border-radius: 6px; color: #ffb7c5; background: #3c2038; font-size: 11px; }
+.report-preview { height: 100%; overflow: auto; padding: 20px; color: #e8efff; background: #10192e; }
+.report-preview-heading { display: flex; align-items: center; gap: 9px; margin-bottom: 16px; color: #b8adff; }
+.report-preview pre { max-width: 900px; margin: 0 auto; padding: 26px; border: 1px solid #39466b; border-radius: 10px; background: #17223c; white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.7 Inter, system-ui, sans-serif; }
 .primary-button { border: 1px solid #8f74ff; background: linear-gradient(135deg, #7561fc, #5135db); box-shadow: 0 5px 14px #4935ba50; color: #fff; font-weight: 700; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 15px; white-space: nowrap; font-size: 11px; }
 .primary-button:hover:not(:disabled) { filter: brightness(1.13); }
 .metrics-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 11px; margin-bottom: 15px; }

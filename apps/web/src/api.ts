@@ -115,6 +115,20 @@ export const api = {
     link.remove()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   },
+  async downloadReport(token: string, runId: string): Promise<void> {
+    const response = await fetch(`/api/runs/${runId}/download-report`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!response.ok) throw new Error(`Không tải được báo cáo (HTTP ${response.status})`)
+    const url = URL.createObjectURL(await response.blob())
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${runId}-report.md`
+    document.body.append(link)
+    link.click()
+    link.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  },
 }
 
 export function runSocket(runId: string, afterSeq = 0): WebSocket {

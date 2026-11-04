@@ -75,6 +75,20 @@ def control_for(run_id: str) -> str | None:
 
 def record_m3_event(run_id: str, event_type: str, payload: dict) -> None:
     with SessionLocal.begin() as session:
+        if event_type == "run.plan":
+            existing = set(session.scalars(select(Task.task_key).where(Task.run_id == run_id)))
+            for spec in payload["tasks"]:
+                if spec["id"] not in existing:
+                    session.add(
+                        Task(
+                            run_id=run_id,
+                            task_key=spec["id"],
+                            title=spec["title"],
+                            agent_role=spec["agent"],
+                            dependencies=spec["depends_on"],
+                            acceptance_criteria=spec["acceptance_criteria"],
+                        )
+                    )
         task_id = payload.get("task_id")
         task = (
             session.scalar(select(Task).where(Task.run_id == run_id, Task.task_key == task_id))

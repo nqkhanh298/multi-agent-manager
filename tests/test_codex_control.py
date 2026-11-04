@@ -96,3 +96,59 @@ def test_worker_records_run_level_target_events_without_task_id(monkeypatch):
         assert events[1].payload == {"target": "web"}
         assert session.scalar(select(AgentExecution)).model == "gpt-6.1-sol"
     engine.dispose()
+
+
+def test_worker_persists_selected_agent_tasks(monkeypatch):
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    sessions = sessionmaker(engine, expire_on_commit=False)
+    with sessions.begin() as session:
+        user = User(name="plan-user", token_hash="plan-token")
+        session.add(user)
+        session.flush()
+        project = Project(owner_id=user.id, name="Research")
+        session.add(project)
+        session.flush()
+        run = Run(project_id=project.id, prompt="Research this", engine="codex_auto")
+        session.add(run)
+        session.flush()
+        session.add(Task(run_id=run.id, task_key="T1", title="Plan", agent_role="coordinator"))
+        run_id = run.id
+    monkeypatch.setattr(worker, "SessionLocal", sessions)
+    payload = {
+        "target": "research_report",
+        "summary": "Write a report",
+        "tasks": [
+            {
+                "id": "T2",
+                "title": "Research",
+                "agent": "researcher",
+                "depends_on": ["T1"],
+                "acceptance_criteria": ["Notes"],
+            },
+            {
+                "id": "T3",
+                "title": "Write",
+                "agent": "writer",
+                "depends_on": ["T2"],
+                "acceptance_criteria": ["Report"],
+            },
+        ],
+    }
+    worker.record_m3_event(run_id, "run.plan", payload)
+    worker.record_m3_event(run_id, "run.plan", payload)
+    with sessions() as session:
+        tasks = session.scalars(
+            select(Task).where(Task.run_id == run_id).order_by(Task.task_key)
+        ).all()
+        assert [(task.task_key, task.agent_role) for task in tasks] == [
+            ("T1", "coordinator"),
+            ("T2", "researcher"),
+            ("T3", "writer"),
+        ]
+        assert tasks[2].dependencies == ["T2"]
+    engine.dispose()

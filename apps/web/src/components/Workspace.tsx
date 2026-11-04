@@ -5,6 +5,7 @@ import { api } from '../api'
 import { useUI } from '../store'
 import { WebPreview } from './WebPreview'
 import { TerminalPreview } from './TerminalPreview'
+import { ReportPreview } from './ReportPreview'
 import type { RunEvent, RunReport, SourceFile } from '../types'
 
 const MonacoView = lazy(() => import('./MonacoView'))
@@ -64,7 +65,15 @@ export function Workspace({ token, runId, files, report, events, preview = false
         <button role="tab" aria-selected={tab === 'tests'} className={tab === 'tests' ? 'active' : ''} onClick={() => setTab('tests')}><TestTube2 size={15} /> Tests</button>
         <button role="tab" aria-selected={tab === 'logs'} className={tab === 'logs' ? 'active' : ''} onClick={() => setTab('logs')}><TerminalSquare size={15} /> Events <span className="tab-count">{events.length}</span></button>
       </div>
-      {tab === 'preview' && preview && (report?.target === 'web' || webApp || (!report?.target && files.some((file) => file.path === 'index.html')) ? <WebPreview token={token} runId={runId} /> : report?.target === 'python_cli' || files.some((file) => file.path === 'app.py') ? <TerminalPreview token={token} runId={runId} /> : <div className="preview-placeholder">Hệ thống đang chọn cách tạo ứng dụng. Bản xem trước sẽ xuất hiện khi có mã nguồn.</div>)}
+      {tab === 'preview' && preview && (
+        report?.target === 'research_report' || files.some((file) => file.path === 'REPORT.md')
+          ? <ReportPreview token={token} runId={runId} />
+          : report?.target === 'web' || webApp || (!report?.target && files.some((file) => file.path === 'index.html'))
+            ? <WebPreview token={token} runId={runId} />
+            : report?.target === 'python_cli' || files.some((file) => file.path === 'app.py')
+              ? <TerminalPreview token={token} runId={runId} />
+              : <div className="preview-placeholder">Coordinator ?ang ch?n agent v? ??u ra ph? h?p v?i y?u c?u.</div>
+      )}
       {tab === 'code' && <div className="code-workspace">
         <aside className="file-explorer">
           <div className="subpanel-title"><FolderTree size={15} /> File Explorer <span>{files.length}</span></div>

@@ -138,10 +138,7 @@ def test_codex_run_requires_account_and_creates_role_tasks(monkeypatch, tmp_path
         assert auto_response.json()["engine"] == "codex_auto"
         auto_id = auto_response.json()["id"]
         task_rows = client.get(f"/api/runs/{auto_id}/tasks", headers=headers).json()
-        assert (
-            next(task for task in task_rows if task["agent_role"] == "researcher")["model"]
-            == "gpt-6.1-sol"
-        )
+        assert [task["agent_role"] for task in task_rows] == ["coordinator"]
         assert (
             next(task for task in task_rows if task["agent_role"] == "coordinator")["model_source"]
             == "default_pending"
@@ -198,6 +195,23 @@ def test_codex_run_requires_account_and_creates_role_tasks(monkeypatch, tmp_path
             client.get(f"/api/runs/{auto_id}/report", headers=headers).json()["target"]
             == "python_cli"
         )
+        assert (
+            client.get(f"/api/runs/{auto_id}/download-report", headers=headers).status_code == 404
+        )
+        (run_dir / "repo" / "REPORT.md").write_text("# Verified report", encoding="utf-8")
+        (run_dir / "report.json").write_text(
+            json.dumps({"target": "research_report", "status": "COMPLETED", "tasks": []}),
+            encoding="utf-8",
+        )
+        assert (
+            client.get(f"/api/runs/{auto_id}/download-report", headers=headers).status_code == 404
+        )
+        with sessions.begin() as session:
+            session.get(Run, auto_id).status = "COMPLETED"
+        download = client.get(f"/api/runs/{auto_id}/download-report", headers=headers)
+        assert download.status_code == 200
+        assert download.text == "# Verified report"
+        assert client.get(f"/api/runs/{auto_id}/download-report").status_code == 401
         run_id = response.json()["id"]
         with sessions.begin() as session:
             session.get(Run, run_id).status = "RUNNING"

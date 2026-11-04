@@ -5,7 +5,13 @@ import subprocess
 
 import pytest
 
-from coding_platform.codex_run import CodexRunRunner, parse_source, parse_target, parse_web_source
+from coding_platform.codex_run import (
+    CodexRunRunner,
+    parse_agent_plan,
+    parse_source,
+    parse_target,
+    parse_web_source,
+)
 from coding_platform.codex_app_server import CodexAppServer, CodexStopped
 from coding_platform.contracts import ToolResult
 from coding_platform.codex_roles import default_assignments
@@ -42,9 +48,15 @@ def test_auto_target_is_selected_before_role_handoffs(tmp_path, monkeypatch):
 
         def run_role(self, role, skill, prompt, cwd, **kwargs):
             prompts.append((role, prompt))
-            if role == "target_selector":
-                assert kwargs["output_schema"]["required"] == ["target"]
-                return '{"target":"python_cli"}'
+            if role == "coordinator" and kwargs.get("output_schema"):
+                assert kwargs["output_schema"]["required"] == ["target", "roles", "summary"]
+                return json.dumps(
+                    {
+                        "target": "python_cli",
+                        "roles": ["developer", "qa", "release"],
+                        "summary": "Build a terminal calculator",
+                    }
+                )
             if role == "developer":
                 return json.dumps(
                     {"app_py": "print('hello')", "test_app_py": "def test_ok(): assert True"}
@@ -77,9 +89,130 @@ def test_auto_target_is_selected_before_role_handoffs(tmp_path, monkeypatch):
     ).run("Make a terminal calculator", "auto-run")
     assert report["status"] == "COMPLETED"
     assert report["target"] == "python_cli"
-    assert prompts[0][0] == "target_selector"
+    assert prompts[0][0] == "coordinator"
     assert "Local Python 3.11 command-line" in prompts[1][1]
     assert ("run.target_selected", {"target": "python_cli"}) in events
+    plan_event = next(payload for kind, payload in events if kind == "run.plan")
+    assert [task["agent"] for task in plan_event["tasks"]] == ["developer", "qa", "release"]
+
+
+def test_coordinator_plan_uses_only_suitable_registered_roles():
+    target, tasks, _ = parse_agent_plan(
+        json.dumps(
+            {
+                "target": "research_report",
+                "roles": ["qa", "writer", "researcher", "release"],
+                "summary": "Investigate and write a report",
+            }
+        )
+    )
+    assert target == "research_report"
+    assert [task.agent for task in tasks] == [
+        "coordinator",
+        "researcher",
+        "writer",
+        "qa",
+        "release",
+    ]
+    assert tasks[-1].depends_on == ("T4",)
+    with pytest.raises(ValueError):
+        parse_agent_plan(
+            json.dumps({"target": "research_report", "roles": ["developer"], "summary": "bad"})
+        )
+    with pytest.raises(ValueError):
+        parse_agent_plan(json.dumps({"target": [], "roles": [], "summary": "bad"}))
+
+
+def test_research_prompt_delivers_reviewed_report_without_app_or_docker(tmp_path, monkeypatch):
+    calls = []
+    reference = prepare_references(
+        [
+            {
+                "name": "brief.md",
+                "data_base64": base64.b64encode(
+                    b"Compare benefits and costs of both options."
+                ).decode(),
+            }
+        ]
+    )[0]
+    save_references(tmp_path / "m3-runs" / "report-run", [reference])
+
+    class FakeCodex:
+        def __init__(self, codex_home):
+            pass
+
+        def account(self):
+            return {"account": {"type": "chatgpt"}}
+
+        def run_role(self, role, skill, prompt, cwd, **kwargs):
+            calls.append(role)
+            assert "Compare benefits and costs" in prompt
+            if role == "coordinator":
+                return json.dumps(
+                    {
+                        "target": "research_report",
+                        "roles": ["researcher", "writer", "qa", "release"],
+                        "summary": "Research the issue and write a report",
+                    }
+                )
+            if role == "researcher":
+                return "Research notes: compare benefits, costs, and limitations."
+            if role == "writer":
+                return (
+                    "# Research report\n\n## Method\nReviewed the question and the research notes. "
+                    "## Findings\nThis example compares benefits and costs of the available options "
+                    "and describes the conditions in which each option is useful. "
+                    "## Limitations\nThis illustrative report has no external citations. "
+                    "## Conclusion\nChoose according to the stated constraints and verify details."
+                )
+            if role == "qa":
+                assert "REPORT.md" in prompt
+                return json.dumps(
+                    {
+                        "verdict": "PASS",
+                        "summary": "Covers the requested comparison.",
+                        "reference_checks": [
+                            {
+                                "id": reference["id"],
+                                "quote": "benefits and costs",
+                                "file": "REPORT.md",
+                                "evidence": "benefits and costs",
+                            }
+                        ],
+                    }
+                )
+            return "Report is ready for handoff."
+
+        def close(self):
+            pass
+
+    def unexpected_sandbox(*args, **kwargs):
+        raise AssertionError("research reports must not start Docker")
+
+    monkeypatch.setattr("coding_platform.codex_run.CodexAppServer", FakeCodex)
+    monkeypatch.setattr("coding_platform.codex_run.DockerSandbox", unexpected_sandbox)
+    events = []
+    report = CodexRunRunner(
+        tmp_path,
+        lambda kind, payload: events.append((kind, payload)),
+        lambda: None,
+        tmp_path / "account",
+        target="auto",
+    ).run("Research and compare two options in a report", "report-run")
+    assert report["status"] == "COMPLETED"
+    assert report["target"] == "research_report"
+    assert calls == ["coordinator", "researcher", "writer", "qa", "release"]
+    assert [task["task_id"] for task in report["tasks"]] == ["T1", "T2", "T3", "T4", "T5"]
+    repo = tmp_path / "m3-runs" / "report-run" / "repo"
+    assert (repo / "REPORT.md").read_text(encoding="utf-8").startswith("# Research report")
+    assert not (repo / "app.py").exists()
+    assert (
+        next(payload for kind, payload in events if kind == "run.plan")["target"]
+        == "research_report"
+    )
+    assert report["reference_checks"][0]["file"] == "REPORT.md"
+    assert [payload["role"] for kind, payload in events if kind == "references.injected"] == calls
+    assert any(kind == "references.verified" for kind, _ in events)
 
 
 def test_codex_turn_uses_current_read_only_policy(tmp_path, monkeypatch):

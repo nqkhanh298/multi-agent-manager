@@ -144,6 +144,31 @@ test('runs generated terminal source from Preview without a mode choice', async 
   await expect(page.getByRole('radio')).toHaveCount(0)
 })
 
+test('shows a coordinator-selected research team and report preview', async ({ page }) => {
+  const state = await mockPlatform(page)
+  state.runs[0].engine = 'codex_auto'
+  state.runs[0].status = 'COMPLETED'
+  state.tasks.splice(0, state.tasks.length,
+    { id: 'T1', title: 'Plan', agent_role: 'coordinator', status: 'COMPLETED', depends_on: [], workspace_ref: null },
+    { id: 'T2', title: 'Research', agent_role: 'researcher', status: 'COMPLETED', depends_on: ['T1'], workspace_ref: null },
+    { id: 'T3', title: 'Write', agent_role: 'writer', status: 'COMPLETED', depends_on: ['T2'], workspace_ref: null },
+    { id: 'T4', title: 'Review', agent_role: 'qa', status: 'COMPLETED', depends_on: ['T3'], workspace_ref: null },
+    { id: 'T5', title: 'Release', agent_role: 'release', status: 'COMPLETED', depends_on: ['T4'], workspace_ref: null },
+  )
+  await page.route('**/api/runs/r1/report', (route) => route.fulfill({ json: {
+    target: 'research_report', status: 'COMPLETED', tasks: [], integration: { stdout: 'Report reviewed', exit_code: 0 },
+  } }))
+  await page.route('**/api/runs/r1/files', (route) => route.fulfill({ json: [{ path: 'REPORT.md', size: 55 }] }))
+  await page.route('**/api/runs/r1/files/REPORT.md', (route) => route.fulfill({ json: {
+    path: 'REPORT.md', content: '# Research report\n\n## Findings\nThe result is documented.',
+  } }))
+  await page.goto('/')
+  await expect(page.locator('.workflow-panel .react-flow__node')).toHaveCount(5)
+  await page.getByRole('tab', { name: 'Preview' }).click()
+  await expect(page.locator('.report-preview')).toContainText('The result is documented.')
+  await expect(page.getByRole('button', { name: 'Tải báo cáo' })).toBeEnabled()
+})
+
 test('assigns a specific model to a role and saves the choice', async ({ page }) => {
   await mockPlatform(page)
   let saved: Record<string, { provider: string; model: string }> | null = null
@@ -175,7 +200,7 @@ test('attaches a reference to the prompt and shows the saved text', async ({ pag
     text: 'The game must have a blue button.',
   }] }))
   await page.goto('/')
-  await page.getByLabel('Bạn muốn hệ thống xây gì?').fill('Build a game')
+  await page.locator('#run-prompt').fill('Build a game')
   await page.locator('#run-references').setInputFiles({
     name: 'requirements.md', mimeType: 'text/markdown', buffer: Buffer.from('The game must have a blue button.'),
   })
@@ -233,7 +258,7 @@ test('keeps eight specialist stages readable in a horizontal workflow', async ({
 test('creates a run and controls its lifecycle', async ({ page }) => {
   await mockPlatform(page)
   await page.goto('/')
-  await page.getByLabel('Bạn muốn hệ thống xây gì?').fill('Ứng dụng mới')
+  await page.locator('#run-prompt').fill('Ứng dụng mới')
   await page.getByRole('button', { name: /Bắt đầu chạy/ }).click()
   await expect(page.getByText('Ứng dụng mới').first()).toBeVisible()
   await page.getByRole('button', { name: /Tạm dừng/ }).click()

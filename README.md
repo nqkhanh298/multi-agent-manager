@@ -5,7 +5,7 @@
 
 A local Codex coding platform prototype with task orchestration, isolated execution, a persistent API, and a live dashboard.
 
-> **Current scope:** Describe the application in plain language; Codex selects a browser interface or a Python terminal program and the dashboard provides a Preview for either. The original fixed Task Manager demo remains available through the legacy API. Native desktop packaging, backend services, arbitrary stacks, and a dynamic task graph remain future work. Codex account sign-in and live generation require a user's own ChatGPT authorization.
+> **Current scope:** Describe the outcome in plain language. Coordinator chooses the needed agents and whether to deliver a browser app, a Python terminal program, or a Markdown research report. The dashboard previews the result. The original fixed Task Manager demo remains available through the legacy API. Native desktop packaging, backend services, and arbitrary stacks remain future work. Codex account sign-in and live generation require a user's own ChatGPT authorization.
 
 ![Dashboard showing a completed Task Manager run](docs/assets/dashboard.png)
 
@@ -14,11 +14,11 @@ A local Codex coding platform prototype with task orchestration, isolated execut
 | Area | Capability |
 | --- | --- |
 | Agent runtime | Tool-calling adapter, bounded steps, isolated file and command tools |
-| Codex agents | Eight specialist roles with separate skills, Codex sessions, and selectable Codex models; automatic target selection; Python CLI or standalone HTML/CSS/JS source, Docker tests, source ZIP |
+| Codex agents | Registry of eight specialist roles with separate skills, Codex sessions, and selectable Codex models; Coordinator selects the roles for each prompt |
 | Orchestration | Validated task DAG, Coordinator and QA, checkpointing, repair loop |
 | Parallel work | Git worktrees for independent tasks, ordered merges, integration QA |
 | Platform backend | FastAPI, PostgreSQL, Redis worker, bearer auth, ordered events, WebSocket replay, run controls, source ZIP |
-| Dashboard | React, TypeScript, horizontal role-colored React Flow workflow, browser or terminal Preview, reference attachments, Monaco, file explorer, Git diff, logs, tests, approvals |
+| Dashboard | React, TypeScript, horizontal role-colored React Flow workflow, browser, terminal, or report Preview, reference attachments, Monaco, file explorer, Git diff, logs, tests, approvals |
 | Hardening | Budgets, worker heartbeat recovery, fault injection, sandbox checks, browser tests |
 
 ```mermaid
@@ -70,11 +70,11 @@ npm ci
 npm run dev
 ```
 
-Open **http://localhost:5173/** and paste the local platform API token. Connect ChatGPT to Codex in the dashboard; the device-code option is available if the browser callback does not work. Create a project and describe what you want. Codex selects a browser app by default, or a Python terminal program when the request explicitly calls for a command-line workflow. Open **Preview** to use the app. For terminal programs, enter responses on separate lines and click **Chạy thử**; each click runs the program from the beginning inside Docker. Source, README, tests and ZIP remain available. The fixed Task Manager benchmark remains accessible with `engine: "demo"` through the API. The API explorer is at **http://localhost:8000/docs**. The platform API token and Codex sign-in are separate credentials.
+Open **http://localhost:5173/** and paste the local platform API token. Connect ChatGPT to Codex in the dashboard; the device-code option is available if the browser callback does not work. Create a project and describe the result you need. Coordinator selects a suitable agent team and one of three outputs: a browser app, a Python terminal program, or a research report. The workflow adds only the selected role blocks after planning. Open **Preview** to use the app or read the report. For terminal programs, enter responses on separate lines and click **Chạy thử**; each click runs the program from the beginning inside Docker. Completed reports can be downloaded as Markdown. The fixed Task Manager benchmark remains accessible with `engine: "demo"` through the API. The API explorer is at **http://localhost:8000/docs**. The platform API token and Codex sign-in are separate credentials.
 
 To assign different Codex models to specialist agents, open **Model Codex theo vai trò**, choose a model for each role, then save before starting a new run. The list comes from Codex. Leave a role at **Mặc định tài khoản** to use the account's default model. The target selector follows Coordinator's model. See [Codex role models](docs/codex-role-models.md).
 
-Attach up to three reference files beside the prompt when you need agents to follow existing requirements or designs. PDF, DOCX, TXT, MD, CSV, and JSON are supported. The dashboard shows the extracted text, delivery events for each agent, and QA's quote-to-source checks. A run with references cannot complete if QA cannot identify a quote from every document and matching evidence in generated source. See [reference handling and limits](docs/references.md).
+Attach up to three reference files beside the prompt when you need agents to follow existing requirements or designs. PDF, DOCX, TXT, MD, CSV, and JSON are supported. The dashboard shows the extracted text, delivery events for each agent, and QA's quote-to-output checks. A run with references cannot complete if QA cannot identify a quote from every document and matching evidence in the generated app or report. See [reference handling and limits](docs/references.md).
 
 For smaller offline demonstrations, run `python -m coding_platform.cli demo`, `m2-demo`, or `m3-demo` from the repository root in Ubuntu. The first creates a calculator and runs pytest; M2 demonstrates a failed test followed by repair; M3 builds and merges backend and frontend branches.
 
@@ -99,7 +99,7 @@ npm run test
 npm run test:e2e
 ```
 
-The browser suite runs ten API-fixture scenarios. Its optional legacy live demo requires `M5_LIVE_TOKEN` and running API, worker, PostgreSQL, Redis, and Docker services. The M4 integration and M6 worker-kill checks are documented in [the development guide](docs/development-guide.md); stop the persistent worker before either check because they control their own queue worker.
+The browser suite runs thirteen API-fixture scenarios. Its optional legacy live demo requires `M5_LIVE_TOKEN` and running API, worker, PostgreSQL, Redis, and Docker services. The M4 integration and M6 worker-kill checks are documented in [the development guide](docs/development-guide.md); stop the persistent worker before either check because they control their own queue worker.
 
 The M7 local checks passed **53 Python tests**, **3 frontend unit tests**, a production dashboard build, and **9 fixture-backed browser tests**. A live eight-role Codex Web smoke run completed with five generated Node tests passing in Docker. See the [M7 report](docs/m7-report.md). The M6 live benchmark and sandbox checks are recorded in the [M6 report](docs/m6-report.md). GitHub Actions runs lint, unit tests, frontend build, and fixture-backed browser tests on each push and pull request.
 
@@ -109,7 +109,8 @@ The automatic Preview changes and current verification are recorded in the [auto
 
 - Generated code runs in Docker with no network, a non-root UID, a read-only root filesystem, limited resources, and a workspace mount. Docker Desktop/WSL2 is suitable for a local demo, not hostile multi-tenant production isolation.
 - A crashed worker leaves uncertain tool calls marked `UNKNOWN` and its run `BLOCKED` for manual reconciliation. It does not blindly replay side effects.
-- The offline Task Manager demo still uses deterministic agents. The opt-in Codex path invokes real role sessions; a standalone web app completed a live eight-role smoke run. Its task graph is fixed and sequential. Codex Web currently produces standalone HTML/CSS/JavaScript without a backend or external dependencies.
+- The offline Task Manager demo still uses deterministic agents. The Codex path invokes real role sessions. Coordinator selects a sequential task graph for each new prompt from the eight-role registry. A standalone web app completed a live eight-role smoke run; the new dynamic planner and report route have automated mock-runtime tests but have not yet completed a live Codex smoke run. Codex Web currently produces standalone HTML/CSS/JavaScript without a backend or external dependencies.
+- Research roles run without network access. For current facts or source-backed reports, attach reference documents; the report must state when external evidence was unavailable.
 - ChatGPT-plan Codex runs do not expose a USD price to this platform. The dashboard leaves USD budget/spend unset for those runs; the time limit still applies. Usage remains subject to the connected account's plan and limits.
 - Codex login is stored per local platform user under ignored `.local/platform/codex-accounts/`. The application never reads or copies the existing Windows Codex `auth.json`. Generated tests run in Docker. A web preview runs JavaScript in a sandboxed, opaque-origin iframe with a restrictive content security policy.
 - The editor, diff, and terminal views are read-only. The benchmark does not create approval requests on its own.
