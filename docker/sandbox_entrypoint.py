@@ -99,7 +99,7 @@ def list_files(path):
         os.close(fd)
 
 
-def run_command(argv, timeout_seconds):
+def run_command(argv, timeout_seconds, stdin=""):
     if (
         not isinstance(argv, list)
         or not argv
@@ -109,12 +109,15 @@ def run_command(argv, timeout_seconds):
         raise ValueError("invalid argv")
     if not isinstance(timeout_seconds, int) or not 1 <= timeout_seconds <= 60:
         raise ValueError("invalid timeout")
+    if not isinstance(stdin, str) or len(stdin.encode("utf-8")) > 4096:
+        raise ValueError("invalid command input")
     try:
         completed = subprocess.run(
             argv,
             cwd=ROOT,
             shell=False,
             capture_output=True,
+            input=stdin.encode("utf-8"),
             timeout=timeout_seconds,
             check=False,
             env={
@@ -155,7 +158,7 @@ def main():
         elif name == "list_files":
             result.update(list_files(args.get("path", ".")))
         elif name == "run_command":
-            result.update(run_command(args["argv"], args["timeout_seconds"]))
+            result.update(run_command(args["argv"], args["timeout_seconds"], args.get("stdin", "")))
         else:
             raise ValueError("tool not allowed")
     except (OSError, ValueError, KeyError, TypeError) as exc:

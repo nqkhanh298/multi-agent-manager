@@ -53,10 +53,15 @@ export const api = {
     request<{ deleted: boolean; removed_runs: number; cleanup_failed: boolean }>(`/api/projects/${projectId}`, token, { method: 'DELETE' }),
   runs: (token: string, projectId: string) =>
     request<Run[]>(`/api/projects/${projectId}/runs`, token),
-  createRun: (token: string, projectId: string, prompt: string, engine: 'demo' | 'codex' | 'codex_web' = 'demo') =>
+  createRun: (token: string, projectId: string, prompt: string) =>
     request<Run>(`/api/projects/${projectId}/runs`, token, {
       method: 'POST',
-      body: JSON.stringify({ prompt, engine }),
+      body: JSON.stringify({ prompt }),
+    }),
+  terminalPreview: (token: string, runId: string, stdin: string) =>
+    request<{ exit_code: number; stdout: string; stderr: string; duration_ms: number }>(`/api/runs/${runId}/preview/terminal`, token, {
+      method: 'POST',
+      body: JSON.stringify({ stdin }),
     }),
   run: (token: string, runId: string) => request<Run>(`/api/runs/${runId}`, token),
   tasks: (token: string, runId: string) => request<Task[]>(`/api/runs/${runId}/tasks`, token),

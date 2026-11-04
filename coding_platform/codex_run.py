@@ -50,6 +50,22 @@ WEB_DEVELOPER_SCHEMA = {
     "additionalProperties": False,
 }
 
+TARGET_SCHEMA = {
+    "type": "object",
+    "properties": {"target": {"type": "string", "enum": ["web", "python_cli"]}},
+    "required": ["target"],
+    "additionalProperties": False,
+}
+
+
+def parse_target(answer: str) -> str:
+    data = json.loads(answer)
+    if not isinstance(data, dict) or set(data) != {"target"}:
+        raise ValueError("Codex target selector returned invalid fields")
+    if data["target"] not in {"web", "python_cli"}:
+        raise ValueError("Codex target selector returned unsupported target")
+    return data["target"]
+
 
 def commit_generated_source(repo: Path) -> None:
     def git(*args: str) -> None:
@@ -111,7 +127,7 @@ class CodexRunRunner:
         self.event = event
         self.control = control
         self.codex_home = codex_home
-        if target not in {"python_cli", "web"}:
+        if target not in {"python_cli", "web", "auto"}:
             raise ValueError("unsupported Codex target")
         self.target = target
 
@@ -159,14 +175,19 @@ class CodexRunRunner:
             report = json.loads(report_path.read_text(encoding="utf-8"))
             if report.get("status") != "PAUSED":
                 raise ValueError("only paused Codex runs can resume")
-            if report.get("target", "python_cli") != self.target:
+            if report.get("requested_target", report.get("target", "python_cli")) != self.target:
                 raise ValueError("Codex target changed during resume")
             report["status"] = "RUNNING"
         else:
             report = {
                 "run_id": run_id,
-                "engine": "codex_web" if self.target == "web" else "codex",
-                "target": self.target,
+                "engine": "codex_auto"
+                if self.target == "auto"
+                else "codex_web"
+                if self.target == "web"
+                else "codex",
+                "requested_target": self.target,
+                "target": None if self.target == "auto" else self.target,
                 "status": "RUNNING",
                 "tasks": [],
                 "integration": None,
@@ -197,6 +218,23 @@ class CodexRunRunner:
             account = client.account().get("account")
             if not account or account.get("type") != "chatgpt":
                 raise CodexUnavailable("ChatGPT account is not connected in this WSL environment")
+            if self.target == "auto" and report["target"] is None:
+                self.event("run.target_selection", {"status": "RUNNING"})
+                selected = client.run_role(
+                    "target_selector",
+                    Path(__file__).resolve().parents[1] / ".agents/skills/target_selector/SKILL.md",
+                    f"Choose the application preview target for this request:\n{prompt}",
+                    agent_context,
+                    output_schema=TARGET_SCHEMA,
+                    stop=self.control,
+                    on_activity=lambda phase, detail: self.event(
+                        "run.target_activity", {"phase": phase, "detail": detail}
+                    ),
+                )
+                report["target"] = parse_target(selected)
+                save()
+                self.event("run.target_selected", {"target": report["target"]})
+            selected_target = report["target"]
             for task in CODEX_TASKS:
                 if task.id in completed:
                     continue
@@ -226,14 +264,14 @@ class CodexRunRunner:
                     "Standalone interactive browser application using plain HTML, CSS, and JavaScript. "
                     "The user must be able to play through a visual interface in the Preview tab. "
                     "Use no external packages or network resources."
-                    if self.target == "web"
+                    if selected_target == "web"
                     else "Local Python 3.11 command-line application using only the standard library."
                 )
                 brief = f"Target: {target_brief}\n\nUser request:\n{prompt}\n\n" + "\n\n".join(
                     f"{role.upper()}:\n{text[:8000]}" for role, text in context.items()
                 )
                 if task.agent == "developer":
-                    web = self.target == "web"
+                    web = selected_target == "web"
                     answer = client.run_role(
                         task.agent,
                         skill,
@@ -271,7 +309,7 @@ class CodexRunRunner:
                             raise RuntimeError(f"could not write {filename}: {result.stderr[:500]}")
                     context[task.agent] = "Created " + ", ".join(files)
                 elif task.agent == "qa":
-                    web = self.target == "web"
+                    web = selected_target == "web"
                     sandbox = DockerSandbox(
                         repo,
                         image="ai-coding-m3-frontend:local" if web else "ai-coding-m1:local",

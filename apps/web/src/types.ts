@@ -30,7 +30,7 @@ export interface Run {
   id: string
   project_id: string
   prompt: string
-  engine?: 'demo' | 'codex' | 'codex_web'
+  engine?: 'demo' | 'codex' | 'codex_web' | 'codex_auto'
   status: RunStatus
   control_request?: 'pause' | 'cancel' | null
   version: number
@@ -112,6 +112,7 @@ export interface SourceContent {
 }
 
 export interface RunReport {
+  target?: 'web' | 'python_cli' | null
   status: string
   parallel_overlap_ms: number
   tasks: Array<{ task_id: string; status: string; test_stdout: string; reason: string }>

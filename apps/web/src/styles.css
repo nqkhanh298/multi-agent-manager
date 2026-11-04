@@ -206,6 +206,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .preview-label { padding: 7px 12px; color: #95a8d1; border-bottom: 1px solid #303e60; font-size: 10px; }
 .preview-frame iframe { width: 100%; flex: 1; border: 0; background: white; }
 .preview-placeholder { flex: 1; display: grid; place-items: center; padding: 20px; color: #9dafd4; text-align: center; font-size: 12px; }
+.terminal-preview { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 10px; padding: 16px; }
+.terminal-preview p { margin: 0; color: #aebcda; font-size: 12px; }
+.terminal-preview label { color: #dce5ff; font-size: 12px; }
+.terminal-preview textarea { width: 100%; resize: vertical; min-height: 80px; padding: 10px; color: #eef3ff; background: #0b1120; border: 1px solid #344266; border-radius: 8px; font: 12px/1.5 monospace; }
+.terminal-preview button { align-self: flex-start; }
+.terminal-preview .terminal-output { flex: 1; min-height: 120px; overflow: auto; margin: 0; }
 .workspace-tabs { display: flex; align-items: center; gap: 4px; padding: 7px 8px 0; border-bottom: 1px solid #2a3554; }
 .workspace-tabs button { background: transparent; color: #9caacb; border: 0; border-bottom: 2px solid transparent; display: flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 650; padding: 8px 11px 10px; }
 .workspace-tabs button.active { color: #fff; border-bottom-color: #8070ff; }

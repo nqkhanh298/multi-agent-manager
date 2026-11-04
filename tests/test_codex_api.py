@@ -1,5 +1,7 @@
 """Codex account state gates real runs and remains scoped to a local user."""
 
+import json
+
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -10,9 +12,10 @@ from apps.api.db import get_session
 from apps.api.models import Base, Project, Run, Task, User
 from apps.api.service import token_digest
 from coding_platform.codex_run import CODEX_TASKS
+from coding_platform.contracts import ToolResult
 
 
-def test_codex_run_requires_account_and_creates_role_tasks(monkeypatch):
+def test_codex_run_requires_account_and_creates_role_tasks(monkeypatch, tmp_path):
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -70,6 +73,41 @@ def test_codex_run_requires_account_and_creates_role_tasks(monkeypatch):
         assert web_response.status_code == 202
         assert web_response.json()["engine"] == "codex_web"
         assert web_response.json()["budget_usd"] is None
+        auto_response = client.post(path, headers=headers, json={"prompt": "Make a calculator"})
+        assert auto_response.status_code == 202
+        assert auto_response.json()["engine"] == "codex_auto"
+        auto_id = auto_response.json()["id"]
+        run_dir = tmp_path / "m3-runs" / auto_id
+        (run_dir / "repo").mkdir(parents=True)
+        (run_dir / "repo" / "app.py").write_text("print(input())", encoding="utf-8")
+        (run_dir / "report.json").write_text(
+            json.dumps({"target": "python_cli", "status": "COMPLETED", "tasks": []}),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(api_module, "data_root", lambda: tmp_path)
+
+        class FakeSandbox:
+            def __init__(self, workspace, image):
+                assert image == "ai-coding-m1:local"
+                assert (workspace / "app.py").read_text(encoding="utf-8") == "print(input())"
+
+            def execute(self, call):
+                assert call.arguments["stdin"] == "hello\n"
+                assert call.arguments["argv"] == ["python", "-I", "app.py"]
+                return ToolResult(call.id, True, 0, stdout="hello\n")
+
+        monkeypatch.setattr(api_module, "DockerSandbox", FakeSandbox)
+        preview = client.post(
+            f"/api/runs/{auto_id}/preview/terminal",
+            headers=headers,
+            json={"stdin": "hello\n"},
+        )
+        assert preview.status_code == 200
+        assert preview.json()["stdout"] == "hello\n"
+        assert (
+            client.get(f"/api/runs/{auto_id}/report", headers=headers).json()["target"]
+            == "python_cli"
+        )
         run_id = response.json()["id"]
         with sessions.begin() as session:
             session.get(Run, run_id).status = "RUNNING"

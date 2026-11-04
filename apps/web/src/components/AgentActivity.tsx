@@ -10,9 +10,10 @@ export function AgentActivity({ run, tasks, events }: { run?: Run; tasks: Task[]
   const active = tasks.find((task) => task.status === 'RUNNING')
   const history = events.filter((event) => event.type === 'task.activity').slice(-6).reverse()
   const current = history.find((event) => event.payload.task_id === active?.id)
+  const selection = [...events].reverse().find((event) => event.type === 'run.target_activity')
   const stopping = run.control_request === 'cancel' ? 'Đang hủy lượt chạy…' :
     run.control_request === 'pause' ? 'Đang tạm dừng…' : null
-  const detail = stopping || (active && current ? String(current.payload.detail || '') :
+  const detail = stopping || (!active && run.engine === 'codex_auto' && !events.some((event) => event.type === 'run.target_selected') && selection ? String(selection.payload.detail || '') : active && current ? String(current.payload.detail || '') :
     active ? 'Đang khởi động agent…' : run.status === 'PAUSED' ? 'Đã tạm dừng. Bấm Tiếp tục để chạy tiếp.' :
       run.status === 'CANCELLED' ? 'Lượt chạy đã được hủy.' :
         run.status === 'COMPLETED' ? 'Các agent đã hoàn thành.' : 'Chờ agent bắt đầu.')

@@ -4,6 +4,7 @@ import { FileCode2, FileDiff, FileText, FolderTree, MonitorPlay, TerminalSquare,
 import { api } from '../api'
 import { useUI } from '../store'
 import { WebPreview } from './WebPreview'
+import { TerminalPreview } from './TerminalPreview'
 import type { RunEvent, RunReport, SourceFile } from '../types'
 
 const MonacoView = lazy(() => import('./MonacoView'))
@@ -27,14 +28,14 @@ function testOutput(report?: RunReport): string {
   return parts.join('\n') || 'Chưa có kết quả kiểm thử.'
 }
 
-export function Workspace({ token, runId, files, report, events, webApp = false }: { token: string; runId: string; files: SourceFile[]; report?: RunReport; events: RunEvent[]; webApp?: boolean }) {
+export function Workspace({ token, runId, files, report, events, preview = false, webApp = false }: { token: string; runId: string; files: SourceFile[]; report?: RunReport; events: RunEvent[]; preview?: boolean; webApp?: boolean }) {
   const filePath = useUI((state) => state.filePath)
   const setFile = useUI((state) => state.setFile)
   const tab = useUI((state) => state.workspaceTab)
   const setTab = useUI((state) => state.setWorkspaceTab)
   useEffect(() => {
-    if (tab === 'preview' && !webApp) setTab('code')
-  }, [tab, webApp, setTab])
+    if (tab === 'preview' && !preview) setTab('code')
+  }, [tab, preview, setTab])
   const fileQuery = useQuery({
     queryKey: ['file', runId, filePath],
     queryFn: () => api.file(token, runId, filePath!),
@@ -55,15 +56,15 @@ export function Workspace({ token, runId, files, report, events, webApp = false 
   }, [files, filePath, setFile])
 
   return (
-    <section className={`workspace-panel panel ${tab === 'preview' && webApp ? 'workspace-preview' : ''}`}>
+    <section className={`workspace-panel panel ${tab === 'preview' && preview ? 'workspace-preview' : ''}`}>
       <div className="workspace-tabs" role="tablist" aria-label="Không gian làm việc">
-        {webApp && <button role="tab" aria-selected={tab === 'preview'} className={tab === 'preview' ? 'active' : ''} onClick={() => setTab('preview')}><MonitorPlay size={15} /> Preview</button>}
+        {preview && <button role="tab" aria-selected={tab === 'preview'} className={tab === 'preview' ? 'active' : ''} onClick={() => setTab('preview')}><MonitorPlay size={15} /> Preview</button>}
         <button role="tab" aria-selected={tab === 'code'} className={tab === 'code' ? 'active' : ''} onClick={() => setTab('code')}><FileCode2 size={15} /> Code</button>
         <button role="tab" aria-selected={tab === 'diff'} className={tab === 'diff' ? 'active' : ''} onClick={() => setTab('diff')}><FileDiff size={15} /> Diff</button>
         <button role="tab" aria-selected={tab === 'tests'} className={tab === 'tests' ? 'active' : ''} onClick={() => setTab('tests')}><TestTube2 size={15} /> Tests</button>
         <button role="tab" aria-selected={tab === 'logs'} className={tab === 'logs' ? 'active' : ''} onClick={() => setTab('logs')}><TerminalSquare size={15} /> Events <span className="tab-count">{events.length}</span></button>
       </div>
-      {tab === 'preview' && webApp && <WebPreview token={token} runId={runId} />}
+      {tab === 'preview' && preview && (report?.target === 'web' || webApp || (!report?.target && files.some((file) => file.path === 'index.html')) ? <WebPreview token={token} runId={runId} /> : report?.target === 'python_cli' || files.some((file) => file.path === 'app.py') ? <TerminalPreview token={token} runId={runId} /> : <div className="preview-placeholder">Hệ thống đang chọn cách tạo ứng dụng. Bản xem trước sẽ xuất hiện khi có mã nguồn.</div>)}
       {tab === 'code' && <div className="code-workspace">
         <aside className="file-explorer">
           <div className="subpanel-title"><FolderTree size={15} /> File Explorer <span>{files.length}</span></div>

@@ -1,8 +1,8 @@
 import { expect, test, type Page } from '@playwright/test'
 
-type MockRun = { id: string; project_id: string; prompt: string; status: string; version: number; created_at: string; updated_at: string; report_ref: null; engine?: 'demo' | 'codex' | 'codex_web'; control_request?: 'pause' | 'cancel' | null }
+type MockRun = { id: string; project_id: string; prompt: string; status: string; version: number; created_at: string; updated_at: string; report_ref: null; engine?: 'demo' | 'codex' | 'codex_web' | 'codex_auto'; control_request?: 'pause' | 'cancel' | null }
 
-async function mockPlatform(page: Page) {
+async function mockPlatform(page: Page, connected = true) {
   const projects = [{ id: 'p1', name: 'Task Management', description: '', created_at: '2026-11-04T00:00:00Z' }]
   const runs: MockRun[] = [{ id: 'r1', project_id: 'p1', prompt: 'Xây ứng dụng quản lý công việc', status: 'RUNNING', version: 1, created_at: '2026-11-04T00:00:00Z', updated_at: '2026-11-04T00:00:00Z', report_ref: null }]
   const tasks = [
@@ -19,7 +19,7 @@ async function mockPlatform(page: Page) {
     const request = route.request()
     const path = new URL(request.url()).pathname
     const method = request.method()
-    if (path === '/api/codex/account') return route.fulfill(json({ connected: false, email: null, plan_type: null }))
+    if (path === '/api/codex/account') return route.fulfill(json({ connected, email: connected ? 'user@example.com' : null, plan_type: null }))
     if (path === '/api/codex/login') return route.fulfill(json({ login_id: 'login-1', auth_url: null, verification_url: 'https://auth.openai.com/codex/device', user_code: 'ABCD-1234' }))
     if (path === '/api/projects' && method === 'GET') return route.fulfill(json(projects))
     if (path === '/api/projects' && method === 'POST') {
@@ -39,7 +39,7 @@ async function mockPlatform(page: Page) {
     }
     if (/^\/api\/projects\/[^/]+\/runs$/.test(path) && method === 'GET') return route.fulfill(json(runs.filter((run) => run.project_id === path.split('/')[3])))
     if (/^\/api\/projects\/[^/]+\/runs$/.test(path) && method === 'POST') {
-      const run: MockRun = { id: `r${runs.length + 1}`, project_id: path.split('/')[3], prompt: request.postDataJSON().prompt as string, status: 'CREATED', version: 0, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), report_ref: null }
+      const run: MockRun = { id: `r${runs.length + 1}`, project_id: path.split('/')[3], prompt: request.postDataJSON().prompt as string, engine: 'codex_auto', status: 'CREATED', version: 0, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), report_ref: null }
       runs.unshift(run)
       return route.fulfill(json(run, 202))
     }
@@ -58,7 +58,7 @@ async function mockPlatform(page: Page) {
     if (path.endsWith('/download')) return route.fulfill({ status: 200, headers: { 'Content-Type': 'application/zip', 'Content-Disposition': 'attachment; filename="source.zip"' }, body: 'PK\u0003\u0004' })
     if (method === 'POST' && path.endsWith('/pause')) { run.status = 'PAUSED'; return route.fulfill(json(run)) }
     if (method === 'POST' && path.endsWith('/resume')) { run.status = 'CREATED'; return route.fulfill(json(run)) }
-    if (method === 'POST' && path.endsWith('/cancel')) { if (run.engine?.startsWith('codex')) run.control_request = 'cancel'; else run.status = 'CANCELLED'; return route.fulfill(json(run)) }
+    if (method === 'POST' && path.endsWith('/cancel')) { if (run.engine === 'codex') run.control_request = 'cancel'; else run.status = 'CANCELLED'; return route.fulfill(json(run)) }
     if (method === 'POST' && path.includes('/approvals/')) { approvals[0].status = 'APPROVED'; return route.fulfill(json({ id: 'a1', status: 'APPROVED' })) }
     return route.fulfill(json([]))
   })
@@ -124,6 +124,23 @@ test('plays a generated web game in an isolated preview', async ({ page }) => {
   await expect(page.locator('iframe[title="Xem trước ứng dụng web"]')).toHaveAttribute('sandbox', 'allow-scripts')
 })
 
+test('runs generated terminal source from Preview without a mode choice', async ({ page }) => {
+  const state = await mockPlatform(page)
+  state.runs[0].engine = 'codex_auto'
+  await page.route('**/api/runs/r1/report', (route) => route.fulfill({ json: { target: 'python_cli', status: 'COMPLETED', tasks: [], merges: [], integration: {} } }))
+  await page.route('**/api/runs/r1/files', (route) => route.fulfill({ json: [{ path: 'app.py', size: 20 }] }))
+  await page.route('**/api/runs/r1/preview/terminal', async (route) => {
+    const input = route.request().postDataJSON() as { stdin: string }
+    await route.fulfill({ json: { stdout: `Xin chào ${input.stdin.trim()}\n`, stderr: '', exit_code: 0, duration_ms: 17 } })
+  })
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Preview' }).click()
+  await page.getByLabel('Dữ liệu nhập cho chương trình').fill('An')
+  await page.getByRole('button', { name: 'Chạy thử' }).click()
+  await expect(page.locator('.terminal-preview .terminal-output')).toContainText('Xin chào An')
+  await expect(page.getByRole('radio')).toHaveCount(0)
+})
+
 test('keeps eight specialist stages readable in a horizontal workflow', async ({ page }) => {
   const state = await mockPlatform(page)
   const roles = ['coordinator', 'researcher', 'architect', 'designer', 'developer', 'qa', 'writer', 'release']
@@ -162,7 +179,6 @@ test('keeps eight specialist stages readable in a horizontal workflow', async ({
 test('creates a run and controls its lifecycle', async ({ page }) => {
   await mockPlatform(page)
   await page.goto('/')
-  await page.getByRole('radio', { name: /Demo Task Manager/ }).check()
   await page.getByLabel('Bạn muốn hệ thống xây gì?').fill('Ứng dụng mới')
   await page.getByRole('button', { name: /Bắt đầu chạy/ }).click()
   await expect(page.getByText('Ứng dụng mới').first()).toBeVisible()
@@ -177,7 +193,7 @@ test('creates a run and controls its lifecycle', async ({ page }) => {
 })
 
 test('offers ChatGPT connection before a real Codex run', async ({ page }) => {
-  await mockPlatform(page)
+  await mockPlatform(page, false)
   await page.goto('/')
   await expect(page.getByRole('button', { name: /Bắt đầu chạy/ })).toBeDisabled()
   await page.getByRole('button', { name: 'Dùng mã thiết bị' }).click()

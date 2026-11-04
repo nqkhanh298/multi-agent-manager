@@ -225,7 +225,11 @@ def process_run(run_id: str) -> str:
                 event=lambda kind, payload: record_m3_event(run_id, kind, payload),
                 control=lambda: control_for(run_id),
                 codex_home=data_root() / "codex-accounts" / owner_id,
-                target="web" if engine == "codex_web" else "python_cli",
+                target="auto"
+                if engine == "codex_auto"
+                else "web"
+                if engine == "codex_web"
+                else "python_cli",
             ).run(prompt, run_id)
         else:
             report = M3Runner(

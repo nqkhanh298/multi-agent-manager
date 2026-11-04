@@ -5,7 +5,9 @@ import hashlib
 import json
 import os
 import subprocess
+import tempfile
 import threading
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -20,6 +22,8 @@ from sqlalchemy.orm import Session
 from coding_platform.m3 import MockM3Coordinator
 from coding_platform.codex_app_server import CodexAppServer, CodexUnavailable
 from coding_platform.codex_run import CODEX_TASKS
+from coding_platform.contracts import ToolCall
+from coding_platform.sandbox import DockerSandbox, SandboxUnavailable
 
 from .budget import BudgetLimits
 from .db import SessionLocal, get_session
@@ -65,7 +69,7 @@ class ProjectCreate(BaseModel):
 
 class RunCreate(BaseModel):
     prompt: str = Field(min_length=1, max_length=10000)
-    engine: str = Field(default="demo", pattern="^(demo|codex|codex_web)$")
+    engine: str = Field(default="codex_auto", pattern="^(demo|codex|codex_web|codex_auto)$")
 
 
 class CodexLoginRequest(BaseModel):
@@ -74,6 +78,10 @@ class CodexLoginRequest(BaseModel):
 
 class ApprovalDecision(BaseModel):
     decision: str = Field(pattern="^(approve|reject)$")
+
+
+class TerminalPreviewInput(BaseModel):
+    stdin: str = Field(default="", max_length=4096)
 
 
 def queue_run(run_id: str) -> None:
@@ -507,6 +515,7 @@ def get_report(
         raise HTTPException(404, "report not ready")
     report = json.loads(report_path.read_text(encoding="utf-8"))
     return {
+        "target": report.get("target"),
         "status": report["status"],
         "parallel_overlap_ms": report.get("parallel_overlap_ms", 0),
         "tasks": [
@@ -523,6 +532,55 @@ def get_report(
             key: value[:8000] if isinstance(value, str) else value
             for key, value in (report.get("integration") or {}).items()
         },
+    }
+
+
+@app.post("/api/runs/{run_id}/preview/terminal")
+def preview_terminal(
+    run_id: str,
+    body: TerminalPreviewInput,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+) -> dict:
+    run = owned_run(session, run_id, user)
+    if run is None:
+        raise HTTPException(404, "run not found")
+    report_path = data_root() / "m3-runs" / run_id / "report.json"
+    if run.engine not in {"codex", "codex_auto"} or not report_path.is_file():
+        raise HTTPException(409, "terminal preview is unavailable for this run")
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    repo = source_repo(run_id)
+    source = repo / "app.py"
+    if (
+        report.get("target", "python_cli") != "python_cli"
+        or not source.is_file()
+        or source.is_symlink()
+        or not source.resolve().is_relative_to(repo)
+    ):
+        raise HTTPException(409, "terminal source is not ready")
+    if source.stat().st_size > 100_000:
+        raise HTTPException(413, "terminal source is too large")
+    try:
+        with tempfile.TemporaryDirectory(prefix="coding-preview-") as directory:
+            (Path(directory) / "app.py").write_bytes(source.read_bytes())
+            result = DockerSandbox(Path(directory), image="ai-coding-m1:local").execute(
+                ToolCall(
+                    str(uuid.uuid4()),
+                    "run_command",
+                    {
+                        "argv": ["python", "-I", "app.py"],
+                        "timeout_seconds": 10,
+                        "stdin": body.stdin,
+                    },
+                )
+            )
+    except SandboxUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+    return {
+        "exit_code": result.exit_code,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "duration_ms": result.duration_ms,
     }
 
 

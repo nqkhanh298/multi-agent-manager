@@ -5,7 +5,7 @@ import subprocess
 
 import pytest
 
-from coding_platform.codex_run import CodexRunRunner, parse_source, parse_web_source
+from coding_platform.codex_run import CodexRunRunner, parse_source, parse_target, parse_web_source
 from coding_platform.codex_app_server import CodexAppServer, CodexStopped
 from coding_platform.contracts import ToolResult
 
@@ -17,6 +17,66 @@ def test_parse_source_rejects_unexpected_fields():
         pass
     else:
         raise AssertionError("unexpected generated file was accepted")
+
+
+def test_target_selector_requires_a_supported_exact_target():
+    assert parse_target('{"target":"web"}') == "web"
+    assert parse_target('{"target":"python_cli"}') == "python_cli"
+    for invalid in ('{"target":"desktop"}', '{"target":"web","extra":1}', "[]"):
+        with pytest.raises(ValueError):
+            parse_target(invalid)
+
+
+def test_auto_target_is_selected_before_role_handoffs(tmp_path, monkeypatch):
+    prompts = []
+
+    class FakeCodex:
+        def __init__(self, codex_home):
+            pass
+
+        def account(self):
+            return {"account": {"type": "chatgpt"}}
+
+        def run_role(self, role, skill, prompt, cwd, **kwargs):
+            prompts.append((role, prompt))
+            if role == "target_selector":
+                assert kwargs["output_schema"]["required"] == ["target"]
+                return '{"target":"python_cli"}'
+            if role == "developer":
+                return json.dumps(
+                    {"app_py": "print('hello')", "test_app_py": "def test_ok(): assert True"}
+                )
+            return f"{role} notes"
+
+        def close(self):
+            pass
+
+    class FakeSandbox:
+        def __init__(self, workspace, image="", cancel_check=None):
+            self.workspace = workspace
+
+        def execute(self, call):
+            if call.name == "write_file":
+                (self.workspace / call.arguments["path"]).write_text(
+                    call.arguments["content"], encoding="utf-8"
+                )
+            return ToolResult(call.id, True, 0, stdout="1 passed")
+
+    monkeypatch.setattr("coding_platform.codex_run.CodexAppServer", FakeCodex)
+    monkeypatch.setattr("coding_platform.codex_run.DockerSandbox", FakeSandbox)
+    events = []
+    report = CodexRunRunner(
+        tmp_path,
+        lambda kind, payload: events.append((kind, payload)),
+        lambda: None,
+        tmp_path / "account",
+        target="auto",
+    ).run("Make a terminal calculator", "auto-run")
+    assert report["status"] == "COMPLETED"
+    assert report["target"] == "python_cli"
+    assert prompts[0][0] == "target_selector"
+    assert "Local Python 3.11 command-line" in prompts[1][1]
+    assert ("run.target_selected", {"target": "python_cli"}) in events
 
 
 def test_codex_turn_uses_current_read_only_policy(tmp_path, monkeypatch):
