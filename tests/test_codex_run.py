@@ -4,6 +4,7 @@ import json
 import subprocess
 
 from coding_platform.codex_run import CodexRunRunner, parse_source
+from coding_platform.codex_app_server import CodexAppServer
 from coding_platform.contracts import ToolResult
 
 
@@ -14,6 +15,36 @@ def test_parse_source_rejects_unexpected_fields():
         pass
     else:
         raise AssertionError("unexpected generated file was accepted")
+
+
+def test_codex_turn_uses_current_read_only_policy(tmp_path, monkeypatch):
+    client = CodexAppServer()
+    requests = []
+    monkeypatch.setattr(client, "start", lambda: None)
+
+    def fake_call(method, params=None, timeout=15):
+        requests.append((method, params))
+        if method == "thread/start":
+            return {"thread": {"id": "thread-1"}}
+        if method == "turn/start":
+            return {"turn": {"id": "turn-1"}}
+        raise AssertionError(method)
+
+    monkeypatch.setattr(client, "call", fake_call)
+    monkeypatch.setattr(
+        client,
+        "notification",
+        lambda timeout=1.0: {
+            "method": "turn/completed",
+            "params": {
+                "threadId": "thread-1",
+                "turn": {"id": "turn-1", "status": "completed"},
+            },
+        },
+    )
+    client.run_role("coordinator", tmp_path / "SKILL.md", "Plan", tmp_path)
+    turn = next(params for method, params in requests if method == "turn/start")
+    assert turn["sandboxPolicy"] == {"type": "readOnly", "networkAccess": False}
 
 
 def test_codex_roles_generate_files_and_verify_in_sandbox(tmp_path, monkeypatch):

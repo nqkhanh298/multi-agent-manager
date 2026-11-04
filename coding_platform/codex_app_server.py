@@ -173,14 +173,7 @@ class CodexAppServer:
             ],
             "cwd": str(cwd),
             "approvalPolicy": "on-request",
-            "sandboxPolicy": {
-                "type": "readOnly",
-                "access": {
-                    "type": "restricted",
-                    "includePlatformDefaults": True,
-                    "readableRoots": [str(cwd), str(skill.parent)],
-                },
-            },
+            "sandboxPolicy": {"type": "readOnly", "networkAccess": False},
         }
         if output_schema is not None:
             params["outputSchema"] = output_schema
