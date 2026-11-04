@@ -39,7 +39,7 @@ from coding_platform.contracts import ToolCall, ToolResult
 from coding_platform.m3 import M3Runner
 from coding_platform.codex_run import CodexRunRunner
 from coding_platform.sandbox import DockerSandbox
-from coding_platform.role_providers import default_assignments
+from coding_platform.codex_roles import default_assignments
 
 QUEUE = "m4:queue"
 PROCESSING = "m4:processing"
@@ -239,7 +239,6 @@ def process_run(run_id: str) -> str:
                 control=lambda: control_for(run_id),
                 codex_home=data_root() / "codex-accounts" / owner_id,
                 assignments=assignments,
-                ai_account_dir=data_root() / "ai-accounts" / owner_id,
                 target="auto"
                 if engine == "codex_auto"
                 else "web"

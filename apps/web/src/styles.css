@@ -218,13 +218,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .role-settings-body { display: grid; gap: 14px; padding: 0 16px 16px; }
 .role-settings-body p { margin: 0; color: #a9b8df; font-size: 12px; }
 .flow-card-model { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 4px 7px; margin-top: 8px; border: 1px solid #50618e; border-radius: 6px; color: #c6d5ff; font-size: 10px; }
-.provider-keys, .role-assignment-list { display: grid; gap: 8px; }
-.provider-key-row, .role-assignment-row { display: grid; grid-template-columns: minmax(105px, 1fr) minmax(130px, 1fr) minmax(170px, 2fr) auto; align-items: center; gap: 8px; }
-.provider-key-row { grid-template-columns: minmax(130px, 1fr) minmax(170px, 3fr) auto auto; }
-.provider-key-row strong, .role-assignment-row strong { color: #dbe4ff; font-size: 12px; }
-.provider-key-row input, .role-assignment-row input, .role-assignment-row select { min-width: 0; padding: 8px; border: 1px solid #344266; border-radius: 7px; color: #e8edff; background: #121b33; font-size: 12px; }
-.provider-key-row button { padding: 8px 10px; border: 1px solid #344266; border-radius: 7px; color: #e8edff; background: #1c2847; cursor: pointer; }
-@media (max-width: 680px) { .provider-key-row, .role-assignment-row { grid-template-columns: 1fr 1fr; } .role-assignment-row input { grid-column: 1 / -1; } }
+.role-assignment-list { display: grid; gap: 8px; }
+.role-assignment-row { display: grid; grid-template-columns: minmax(130px, 1fr) minmax(190px, 2fr); align-items: center; gap: 8px; }
+.role-assignment-row strong { color: #dbe4ff; font-size: 12px; }
+.role-assignment-row select { min-width: 0; padding: 8px; border: 1px solid #344266; border-radius: 7px; color: #e8edff; background: #121b33; font-size: 12px; }
+@media (max-width: 680px) { .role-assignment-row { grid-template-columns: 1fr; } }
 .workspace-tabs { display: flex; align-items: center; gap: 4px; padding: 7px 8px 0; border-bottom: 1px solid #2a3554; }
 .workspace-tabs button { background: transparent; color: #9caacb; border: 0; border-bottom: 2px solid transparent; display: flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 650; padding: 8px 11px 10px; }
 .workspace-tabs button.active { color: #fff; border-bottom-color: #8070ff; }

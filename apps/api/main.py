@@ -12,7 +12,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import redis
-import httpx
 from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -25,15 +24,7 @@ from coding_platform.codex_app_server import CodexAppServer, CodexUnavailable
 from coding_platform.codex_run import CODEX_TASKS
 from coding_platform.contracts import ToolCall
 from coding_platform.sandbox import DockerSandbox, SandboxUnavailable
-from coding_platform.role_providers import (
-    PROVIDERS,
-    read_assignments,
-    read_key,
-    remove_key,
-    validate_assignments,
-    write_assignments,
-    write_key,
-)
+from coding_platform.codex_roles import read_assignments, validate_assignments, write_assignments
 
 from .budget import BudgetLimits
 from .db import SessionLocal, get_session
@@ -98,11 +89,8 @@ class RoleAssignmentsInput(BaseModel):
     assignments: dict[str, dict[str, str]]
 
 
-class ProviderKeyInput(BaseModel):
-    key: str = Field(min_length=1, max_length=512)
-
-
-def ai_account_dir(user: User) -> Path:
+def codex_settings_dir(user: User) -> Path:
+    # Keep the existing location so saved Codex model selections survive upgrades.
     return data_root() / "ai-accounts" / user.id
 
 
@@ -202,95 +190,31 @@ def codex_logout(user: User = Depends(current_user)) -> dict:
     return {"connected": False}
 
 
-@app.get("/api/ai/roles")
-def get_ai_roles(user: User = Depends(current_user)) -> dict:
-    directory = ai_account_dir(user)
-    return {
-        "assignments": read_assignments(directory),
-        "keys": {
-            provider: bool(read_key(directory, provider)) for provider in ("claude", "gemini")
-        },
-    }
+@app.get("/api/codex/roles")
+def get_codex_roles(user: User = Depends(current_user)) -> dict:
+    return {"assignments": read_assignments(codex_settings_dir(user))}
 
 
-@app.put("/api/ai/roles")
-def put_ai_roles(body: RoleAssignmentsInput, user: User = Depends(current_user)) -> dict:
+@app.put("/api/codex/roles")
+def put_codex_roles(body: RoleAssignmentsInput, user: User = Depends(current_user)) -> dict:
     try:
         assignments = validate_assignments(body.assignments)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
-    directory = ai_account_dir(user)
-    for item in assignments.values():
-        provider = item["provider"]
-        if provider != "codex" and not read_key(directory, provider):
-            raise HTTPException(409, f"connect {provider} before assigning a role")
-    return {"assignments": write_assignments(directory, assignments)}
+    return {"assignments": write_assignments(codex_settings_dir(user), assignments)}
 
 
-@app.put("/api/ai/keys/{provider}")
-def put_ai_key(provider: str, body: ProviderKeyInput, user: User = Depends(current_user)) -> dict:
+@app.get("/api/codex/models")
+def list_codex_models(user: User = Depends(current_user)) -> dict:
     try:
-        write_key(ai_account_dir(user), provider, body.key.strip())
-    except ValueError as exc:
-        raise HTTPException(422, str(exc)) from exc
-    return {"provider": provider, "connected": True}
-
-
-@app.delete("/api/ai/keys/{provider}")
-def delete_ai_key(provider: str, user: User = Depends(current_user)) -> dict:
-    try:
-        remove_key(ai_account_dir(user), provider)
-    except ValueError as exc:
-        raise HTTPException(422, str(exc)) from exc
-    return {"provider": provider, "connected": False}
-
-
-@app.get("/api/ai/models/{provider}")
-def list_ai_models(provider: str, user: User = Depends(current_user)) -> dict:
-    if provider not in PROVIDERS:
-        raise HTTPException(404, "unsupported provider")
-    if provider == "codex":
-        try:
-            codex = codex_client(user)
-            codex.start()
-            data = codex.call("model/list", {"limit": 100})
-        except (CodexUnavailable, KeyError) as exc:
-            raise HTTPException(503, "Codex model catalog is unavailable") from exc
-        rows = data.get("data", [])
-        models = [row.get("model") or row.get("id") for row in rows]
-    else:
-        key = read_key(ai_account_dir(user), provider)
-        if not key:
-            raise HTTPException(409, f"connect {provider} first")
-        try:
-            with httpx.Client(timeout=15) as client:
-                if provider == "claude":
-                    response = client.get(
-                        "https://api.anthropic.com/v1/models",
-                        headers={
-                            "Authorization": f"Bearer {key}",
-                            "anthropic-version": "2026-10-21",
-                        },
-                    )
-                    response.raise_for_status()
-                    models = [item.get("id") for item in response.json().get("data", [])]
-                else:
-                    response = client.get(
-                        "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000",
-                        headers={"x-goog-api-key": key},
-                    )
-                    response.raise_for_status()
-                    models = [
-                        item.get("name", "").removeprefix("models/")
-                        for item in response.json().get("models", [])
-                        if "generateContent" in item.get("supportedGenerationMethods", [])
-                    ]
-        except httpx.HTTPError as exc:
-            raise HTTPException(503, f"{provider} model catalog is unavailable") from exc
-    return {
-        "provider": provider,
-        "models": [value for value in models if isinstance(value, str) and value][:1000],
-    }
+        codex = codex_client(user)
+        codex.start()
+        data = codex.call("model/list", {"limit": 100})
+    except (CodexUnavailable, KeyError) as exc:
+        raise HTTPException(503, "Codex model catalog is unavailable") from exc
+    rows = data.get("data", [])
+    models = [row.get("model") or row.get("id") for row in rows]
+    return {"models": [value for value in models if isinstance(value, str) and value][:100]}
 
 
 @app.post("/api/projects", status_code=201)
@@ -360,18 +284,13 @@ def create_run(
     ):
         raise HTTPException(404, "project not found")
     if body.engine.startswith("codex"):
-        assignments = read_assignments(ai_account_dir(user))
-        for item in assignments.values():
-            provider = item["provider"]
-            if provider != "codex" and not read_key(ai_account_dir(user), provider):
-                raise HTTPException(409, f"{provider} key is missing for a configured role")
-        if any(item["provider"] == "codex" for item in assignments.values()):
-            try:
-                account = codex_client(user).account().get("account")
-            except CodexUnavailable as exc:
-                raise HTTPException(503, str(exc)) from exc
-            if not account or account.get("type") != "chatgpt":
-                raise HTTPException(409, "connect your ChatGPT account to Codex first")
+        assignments = read_assignments(codex_settings_dir(user))
+        try:
+            account = codex_client(user).account().get("account")
+        except CodexUnavailable as exc:
+            raise HTTPException(503, str(exc)) from exc
+        if not account or account.get("type") != "chatgpt":
+            raise HTTPException(409, "connect your ChatGPT account to Codex first")
         plan = CODEX_TASKS
     else:
         plan = MockM3Coordinator().create_plan(body.prompt).tasks

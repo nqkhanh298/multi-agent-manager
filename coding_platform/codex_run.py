@@ -9,12 +9,7 @@ from typing import Callable
 from coding_platform.codex_app_server import CodexAppServer, CodexStopped, CodexUnavailable
 from coding_platform.contracts import ToolCall
 from coding_platform.sandbox import DockerSandbox, SandboxCancelled
-from coding_platform.role_providers import (
-    default_assignments,
-    read_key,
-    run_external_role,
-    validate_assignments,
-)
+from coding_platform.codex_roles import default_assignments, validate_assignments
 
 
 @dataclass(frozen=True)
@@ -129,14 +124,12 @@ class CodexRunRunner:
         codex_home: Path,
         target: str = "python_cli",
         assignments: dict | None = None,
-        ai_account_dir: Path | None = None,
     ):
         self.root = root
         self.event = event
         self.control = control
         self.codex_home = codex_home
         self.assignments = validate_assignments(assignments or default_assignments())
-        self.ai_account_dir = ai_account_dir
         if target not in {"python_cli", "web", "auto"}:
             raise ValueError("unsupported Codex target")
         self.target = target
@@ -235,33 +228,20 @@ class CodexRunRunner:
                 activity: Callable[[str, str], None] | None = None,
             ) -> str:
                 assignment = self.assignments["coordinator" if role == "target_selector" else role]
-                provider, model = assignment["provider"], assignment["model"]
-                if provider == "codex":
-                    return client.run_role(
-                        role,
-                        skill,
-                        brief,
-                        agent_context,
-                        output_schema=schema,
-                        stop=self.control,
-                        on_activity=activity,
-                        **({"model": model} if model else {}),
-                    )
-                if self.ai_account_dir is None:
-                    raise ValueError("AI account directory is required for external providers")
-                key = read_key(self.ai_account_dir, provider)
-                if not key:
-                    raise ValueError(f"{provider} key is missing for {role}")
-                return run_external_role(
-                    provider, model, key, skill, brief, schema, self.control, activity
+                return client.run_role(
+                    role,
+                    skill,
+                    brief,
+                    agent_context,
+                    output_schema=schema,
+                    stop=self.control,
+                    on_activity=activity,
+                    **({"model": assignment["model"]} if assignment["model"] else {}),
                 )
 
-            if any(item["provider"] == "codex" for item in self.assignments.values()):
-                account = client.account().get("account")
-                if not account or account.get("type") != "chatgpt":
-                    raise CodexUnavailable(
-                        "ChatGPT account is not connected in this WSL environment"
-                    )
+            account = client.account().get("account")
+            if not account or account.get("type") != "chatgpt":
+                raise CodexUnavailable("ChatGPT account is not connected in this WSL environment")
             if self.target == "auto" and report["target"] is None:
                 self.event("run.target_selection", {"status": "RUNNING"})
                 selected = call_role(

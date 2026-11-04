@@ -8,7 +8,7 @@ import pytest
 from coding_platform.codex_run import CodexRunRunner, parse_source, parse_target, parse_web_source
 from coding_platform.codex_app_server import CodexAppServer, CodexStopped
 from coding_platform.contracts import ToolResult
-from coding_platform.role_providers import default_assignments
+from coding_platform.codex_roles import default_assignments
 
 
 def test_parse_source_rejects_unexpected_fields():
@@ -301,9 +301,10 @@ def test_web_source_schema_and_sandbox_target(tmp_path, monkeypatch):
     assert (tmp_path / "m3-runs/web-run/repo/index.html").is_file()
 
 
-def test_role_runner_routes_researcher_to_claude_and_reports_model(tmp_path, monkeypatch):
+def test_role_runner_uses_separate_codex_models_and_reports_them(tmp_path, monkeypatch):
     assignments = default_assignments()
-    assignments["researcher"] = {"provider": "claude", "model": "claude-sonnet-5-5"}
+    assignments["coordinator"] = {"provider": "codex", "model": "gpt-6-astra"}
+    assignments["researcher"] = {"provider": "codex", "model": "gpt-6.1-sol"}
     calls = []
     events = []
 
@@ -334,81 +335,21 @@ def test_role_runner_routes_researcher_to_claude_and_reports_model(tmp_path, mon
                 (self.workspace / call.arguments["path"]).write_text(call.arguments["content"])
             return ToolResult(call.id, True, 0, stdout="1 passed")
 
-    def external(provider, model, key, skill, brief, schema, stop, activity):
-        calls.append((provider, "researcher", model))
-        return "Claude research notes"
-
     monkeypatch.setattr("coding_platform.codex_run.CodexAppServer", FakeCodex)
     monkeypatch.setattr("coding_platform.codex_run.DockerSandbox", FakeSandbox)
-    monkeypatch.setattr(
-        "coding_platform.codex_run.read_key", lambda account_dir, provider: "secret"
-    )
-    monkeypatch.setattr("coding_platform.codex_run.run_external_role", external)
     report = CodexRunRunner(
         tmp_path,
         lambda kind, payload: events.append((kind, payload)),
         lambda: None,
         tmp_path / "codex-account",
         assignments=assignments,
-        ai_account_dir=tmp_path / "ai-account",
-    ).run("Make a calculator", "mixed-run")
+    ).run("Make a calculator", "codex-models-run")
     assert report["status"] == "COMPLETED"
-    assert ("claude", "researcher", "claude-sonnet-5-5") in calls
+    assert ("codex", "researcher", "gpt-6.1-sol") in calls
+    assert ("codex", "coordinator", "gpt-6-astra") in calls
     assert any(
         kind == "task.status"
-        and payload.get("provider") == "claude"
-        and payload.get("model") == "claude-sonnet-5-5"
+        and payload.get("provider") == "codex"
+        and payload.get("model") == "gpt-6.1-sol"
         for kind, payload in events
     )
-
-
-def test_all_external_roles_do_not_require_codex_account(tmp_path, monkeypatch):
-    assignments = {
-        role: {"provider": "gemini", "model": "gemini-test"} for role in default_assignments()
-    }
-
-    class FakeCodex:
-        def __init__(self, codex_home):
-            pass
-
-        def account(self):
-            raise AssertionError("Codex login should not be checked")
-
-        def close(self):
-            pass
-
-    class FakeSandbox:
-        def __init__(self, workspace, image="", cancel_check=None):
-            self.workspace = workspace
-
-        def execute(self, call):
-            if call.name == "write_file":
-                (self.workspace / call.arguments["path"]).write_text(call.arguments["content"])
-            return ToolResult(call.id, True, 0, stdout="1 passed")
-
-    def external(provider, model, key, skill, brief, schema, stop, activity):
-        if skill.parent.name == "target_selector":
-            return '{"target":"python_cli"}'
-        if skill.parent.name == "developer":
-            return json.dumps(
-                {"app_py": "print('ok')", "test_app_py": "def test_ok(): assert True"}
-            )
-        return "role notes"
-
-    monkeypatch.setattr("coding_platform.codex_run.CodexAppServer", FakeCodex)
-    monkeypatch.setattr("coding_platform.codex_run.DockerSandbox", FakeSandbox)
-    monkeypatch.setattr(
-        "coding_platform.codex_run.read_key", lambda account_dir, provider: "secret"
-    )
-    monkeypatch.setattr("coding_platform.codex_run.run_external_role", external)
-    report = CodexRunRunner(
-        tmp_path,
-        lambda *args: None,
-        lambda: None,
-        tmp_path / "codex-account",
-        target="auto",
-        assignments=assignments,
-        ai_account_dir=tmp_path / "ai-account",
-    ).run("Create a CLI", "external-run")
-    assert report["status"] == "COMPLETED"
-    assert report["target"] == "python_cli"

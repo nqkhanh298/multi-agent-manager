@@ -55,9 +55,8 @@ export interface CodexLogin {
   user_code: string | null
 }
 
-export type AIProvider = 'codex' | 'claude' | 'gemini'
-export type RoleAssignment = { provider: AIProvider; model: string }
-export type RoleSettings = { assignments: Record<string, RoleAssignment>; keys: { claude: boolean; gemini: boolean } }
+export type RoleAssignment = { provider: 'codex'; model: string }
+export type RoleSettings = { assignments: Record<string, RoleAssignment> }
 
 export interface Task {
   id: string

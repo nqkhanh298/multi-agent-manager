@@ -1,5 +1,7 @@
 # MULTI-AGENT CODING PLATFORM — WINDOWS IMPLEMENTATION SPECIFICATION
 
+> Tài liệu này ghi lại bản thiết kế gốc. Phạm vi sản phẩm hiện nay chỉ dùng Codex cho tất cả vai trò. Xem [README](README.md) và [model Codex theo vai trò](docs/codex-role-models.md) để biết cách dùng hiện tại.
+
 > Version 1.0 · 2026-11-03 · Language: Vietnamese · Target: Windows 11 + WSL2 + Docker Desktop
 >
 > **Mục đích:** Đây là tài liệu triển khai dành cho coding agent. Hãy đọc toàn bộ trước khi viết mã. Không được coi pseudocode là implementation hoàn chỉnh. Mọi milestone phải được kiểm chứng bằng lệnh/test thực tế.

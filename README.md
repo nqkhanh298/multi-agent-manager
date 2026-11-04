@@ -3,7 +3,7 @@
 [![CI](https://github.com/nqkhanh298/multi-agent-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/nqkhanh298/multi-agent-manager/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-A local coding platform prototype with task orchestration, isolated execution, a persistent API, a live dashboard, and an opt-in Codex agent path.
+A local Codex coding platform prototype with task orchestration, isolated execution, a persistent API, and a live dashboard.
 
 > **Current scope:** Describe the application in plain language; Codex selects a browser interface or a Python terminal program and the dashboard provides a Preview for either. The original fixed Task Manager demo remains available through the legacy API. Native desktop packaging, backend services, arbitrary stacks, and a dynamic task graph remain future work. Codex account sign-in and live generation require a user's own ChatGPT authorization.
 
@@ -14,7 +14,7 @@ A local coding platform prototype with task orchestration, isolated execution, a
 | Area | Capability |
 | --- | --- |
 | Agent runtime | Tool-calling adapter, bounded steps, isolated file and command tools |
-| Agent providers | Codex, Claude, or Gemini per role and model; automatic target selection; eight role skills and sessions; Python CLI or standalone HTML/CSS/JS source, Docker tests, source ZIP |
+| Codex agents | Eight specialist roles with separate skills, Codex sessions, and selectable Codex models; automatic target selection; Python CLI or standalone HTML/CSS/JS source, Docker tests, source ZIP |
 | Orchestration | Validated task DAG, Coordinator and QA, checkpointing, repair loop |
 | Parallel work | Git worktrees for independent tasks, ordered merges, integration QA |
 | Platform backend | FastAPI, PostgreSQL, Redis worker, bearer auth, ordered events, WebSocket replay, run controls, source ZIP |
@@ -70,9 +70,9 @@ npm ci
 npm run dev
 ```
 
-Open **http://localhost:5173/** and paste the local platform API token. Connect ChatGPT in the dashboard if you assign any role to Codex; the device-code option is available if the browser callback does not work. Create a project and describe what you want. Coordinator's configured provider chooses a browser app by default, or a Python terminal program when the request explicitly calls for a command-line workflow. Open **Preview** to use the app. For terminal programs, enter responses on separate lines and click **Chạy thử**; each click runs the program from the beginning inside Docker. Source, README, tests and ZIP remain available. The fixed Task Manager benchmark remains accessible with `engine: "demo"` through the API. The API explorer is at **http://localhost:8000/docs**. The platform API token and provider connections are separate credentials.
+Open **http://localhost:5173/** and paste the local platform API token. Connect ChatGPT to Codex in the dashboard; the device-code option is available if the browser callback does not work. Create a project and describe what you want. Codex selects a browser app by default, or a Python terminal program when the request explicitly calls for a command-line workflow. Open **Preview** to use the app. For terminal programs, enter responses on separate lines and click **Chạy thử**; each click runs the program from the beginning inside Docker. Source, README, tests and ZIP remain available. The fixed Task Manager benchmark remains accessible with `engine: "demo"` through the API. The API explorer is at **http://localhost:8000/docs**. The platform API token and Codex sign-in are separate credentials.
 
-To use different AI providers for specialist roles, open **AI cho từng vai trò**. Connect Claude and/or Gemini with their API keys, choose a provider and model for each role, then save before starting a new run. Model lists are fetched from the corresponding provider. The target selector follows Coordinator's provider. See [provider setup and limits](docs/multi-provider-roles.md).
+To assign different Codex models to specialist agents, open **Model Codex theo vai trò**, choose a model for each role, then save before starting a new run. The list comes from Codex. Leave a role at **Mặc định tài khoản** to use the account's default model. The target selector follows Coordinator's model. See [Codex role models](docs/codex-role-models.md).
 
 For smaller offline demonstrations, run `python -m coding_platform.cli demo`, `m2-demo`, or `m3-demo` from the repository root in Ubuntu. The first creates a calculator and runs pytest; M2 demonstrates a failed test followed by repair; M3 builds and merges backend and frontend branches.
 

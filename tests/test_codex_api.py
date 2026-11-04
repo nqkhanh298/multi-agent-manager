@@ -13,7 +13,7 @@ from apps.api.models import Base, Project, Run, Task, User
 from apps.api.service import token_digest
 from coding_platform.codex_run import CODEX_TASKS
 from coding_platform.contracts import ToolResult
-from coding_platform.role_providers import default_assignments
+from coding_platform.codex_roles import default_assignments
 
 
 def test_codex_run_requires_account_and_creates_role_tasks(monkeypatch, tmp_path):
@@ -40,6 +40,13 @@ def test_codex_run_requires_account_and_creates_role_tasks(monkeypatch, tmp_path
     class FakeCodex:
         connected = False
 
+        def start(self):
+            pass
+
+        def call(self, method, params=None):
+            assert method == "model/list"
+            return {"data": [{"model": "gpt-6.1-sol"}, {"id": "gpt-6-astra"}]}
+
         def account(self):
             return {
                 "account": {"type": "chatgpt", "email": "user@example.com"}
@@ -64,29 +71,37 @@ def test_codex_run_requires_account_and_creates_role_tasks(monkeypatch, tmp_path
             == 409
         )
         fake.connected = True
+        assert client.get("/api/codex/models", headers=headers).json() == {
+            "models": ["gpt-6.1-sol", "gpt-6-astra"]
+        }
         response = client.post(
             path, headers=headers, json={"prompt": "Make a timer", "engine": "codex"}
         )
         assert response.status_code == 202
         assert response.json()["engine"] == "codex"
-        roles = client.get("/api/ai/roles", headers=headers)
+        roles = client.get("/api/codex/roles", headers=headers)
         assert roles.status_code == 200
         assert roles.json()["assignments"]["researcher"]["provider"] == "codex"
         assert (
-            client.put(
-                "/api/ai/keys/claude", headers=headers, json={"key": "private-key"}
-            ).status_code
-            == 200
+            client.put("/api/ai/keys/claude", headers=headers, json={"key": "x"}).status_code == 404
         )
         assignments = default_assignments()
-        assignments["researcher"] = {"provider": "claude", "model": "claude-sonnet-5-5"}
+        assignments["researcher"] = {"provider": "codex", "model": "gpt-6.1-sol"}
         assert (
             client.put(
-                "/api/ai/roles", headers=headers, json={"assignments": assignments}
+                "/api/codex/roles", headers=headers, json={"assignments": assignments}
             ).status_code
             == 200
         )
-        assert "private-key" not in json.dumps(client.get("/api/ai/roles", headers=headers).json())
+        rejected = default_assignments()
+        rejected["researcher"] = {"provider": "claude", "model": "test"}
+        assert (
+            client.put(
+                "/api/codex/roles", headers=headers, json={"assignments": rejected}
+            ).status_code
+            == 422
+        )
+        assert client.get("/api/ai/roles", headers=headers).status_code == 404
         web_response = client.post(
             path, headers=headers, json={"prompt": "Make a browser game", "engine": "codex_web"}
         )
@@ -99,7 +114,6 @@ def test_codex_run_requires_account_and_creates_role_tasks(monkeypatch, tmp_path
         auto_id = auto_response.json()["id"]
         snapshot = tmp_path / "m3-runs" / auto_id / "role-assignments.json"
         assert json.loads(snapshot.read_text())["researcher"] == assignments["researcher"]
-        assert "private-key" not in snapshot.read_text()
         run_dir = tmp_path / "m3-runs" / auto_id
         (run_dir / "repo").mkdir(parents=True)
         (run_dir / "repo" / "app.py").write_text("print(input())", encoding="utf-8")
