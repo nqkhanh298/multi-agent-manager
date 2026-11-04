@@ -34,6 +34,7 @@ from .models import (
     ToolCallRecord,
     User,
 )
+from .project_delete import ProjectHasActiveRuns, delete_project_files, delete_project_records
 from .service import (
     append_event,
     authenticate,
@@ -201,6 +202,26 @@ def get_project(
     return project_payload(project)
 
 
+@app.delete("/api/projects/{project_id}")
+def delete_project(
+    project_id: str, session: Session = Depends(get_session), user: User = Depends(current_user)
+) -> dict:
+    project = session.scalar(
+        select(Project)
+        .where(Project.id == project_id, Project.owner_id == user.id)
+        .with_for_update()
+    )
+    if project is None:
+        raise HTTPException(404, "project not found")
+    try:
+        run_ids = delete_project_records(session, project)
+    except ProjectHasActiveRuns as exc:
+        raise HTTPException(409, str(exc)) from exc
+    session.commit()
+    failed = delete_project_files(data_root(), run_ids)
+    return {"deleted": True, "removed_runs": len(run_ids), "cleanup_failed": bool(failed)}
+
+
 @app.post("/api/projects/{project_id}/runs", status_code=202)
 def create_run(
     project_id: str,
@@ -208,7 +229,14 @@ def create_run(
     session: Session = Depends(get_session),
     user: User = Depends(current_user),
 ) -> dict:
-    if owned_project(session, project_id, user) is None:
+    if (
+        session.scalar(
+            select(Project)
+            .where(Project.id == project_id, Project.owner_id == user.id)
+            .with_for_update()
+        )
+        is None
+    ):
         raise HTTPException(404, "project not found")
     if body.engine == "codex":
         try:

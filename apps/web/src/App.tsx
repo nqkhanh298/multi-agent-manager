@@ -2,18 +2,19 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Activity, ArrowRight, Bell, Bot, Check, ChevronRight, CircleCheck, Clock3,
-  Download, Folder, FolderPlus, LayoutDashboard, LogOut, Pause, Play, Plus,
-  Send, ShieldCheck, Square, Workflow as WorkflowIcon, X,
+  Download, FolderPlus, LayoutDashboard, LogOut, Pause, Play, Plus,
+  Send, ShieldCheck, Square, Trash2, Workflow as WorkflowIcon, X,
 } from 'lucide-react'
 import { api } from './api'
 import { Login } from './components/Login'
 import { CodexConnection, useCodexAccount } from './components/CodexConnection'
 import { AgentActivity } from './components/AgentActivity'
+import { ProjectList } from './components/ProjectList'
 import { Workflow } from './components/Workflow'
 import { Workspace } from './components/Workspace'
 import { useRunEvents } from './hooks/useRunEvents'
 import { useUI } from './store'
-import type { RunEvent, Task } from './types'
+import type { Project, RunEvent, Task } from './types'
 
 const statusNames: Record<string, string> = {
   CREATED: 'Đang chờ', PLANNING: 'Lập kế hoạch', RUNNING: 'Đang chạy',
@@ -64,6 +65,7 @@ function Studio({ token }: { token: string }) {
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [showApproval, setShowApproval] = useState(false)
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null)
 
   const projectsQuery = useQuery({ queryKey: ['projects'], queryFn: () => api.projects(token), retry: false })
   const codexAccount = useCodexAccount(token)
@@ -113,6 +115,25 @@ function Studio({ token }: { token: string }) {
       setShowProjectForm(false)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Không tạo được dự án')
+    } finally { setBusy('') }
+  }
+
+  async function deleteProject() {
+    if (!projectToDelete) return
+    const target = projectToDelete
+    setBusy('delete-project')
+    setError('')
+    try {
+      const result = await api.deleteProject(token, target.id)
+      const remaining = (projectsQuery.data || []).filter((project) => project.id !== target.id)
+      queryClient.setQueryData(['projects'], remaining)
+      queryClient.removeQueries({ queryKey: ['runs', target.id] })
+      if (projectId === target.id) setProject(remaining[0]?.id || null)
+      setProjectToDelete(null)
+      if (result.cleanup_failed) setError('Dự án đã xóa, nhưng một số file kết quả cục bộ chưa xóa được.')
+      await queryClient.invalidateQueries({ queryKey: ['projects'] })
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Không xóa được dự án')
     } finally { setBusy('') }
   }
 
@@ -178,14 +199,14 @@ function Studio({ token }: { token: string }) {
         <button className="nav-item active"><LayoutDashboard size={17} /> Dự án <ChevronRight size={14} /></button>
         <div className="sidebar-section-header"><span>Dự án của tôi</span><button aria-label="Tạo dự án" title="Tạo dự án" onClick={() => setShowProjectForm(!showProjectForm)}><Plus size={17} /></button></div>
         {showProjectForm && <form className="new-project-form" onSubmit={createProject}><input aria-label="Tên dự án mới" value={newProject} onChange={(event) => setNewProject(event.target.value)} placeholder="Tên dự án…" autoFocus /><button type="submit" disabled={busy === 'project'}><ArrowRight size={15} /></button></form>}
-        <div className="project-list">{projects.map((project) => <button key={project.id} className={`project-item ${projectId === project.id ? 'selected' : ''}`} onClick={() => setProject(project.id)}><Folder size={16} /><span>{project.name}</span></button>)}{!projects.length && <p className="sidebar-empty">Tạo dự án đầu tiên để bắt đầu.</p>}</div>
+        <ProjectList projects={projects} selectedId={projectId} onSelect={setProject} onDelete={setProjectToDelete} />
         {selectedProject && <><div className="sidebar-section-header runs-header"><span>Lượt chạy gần đây</span></div><div className="run-list">{runs.map((item) => <button key={item.id} className={`run-item ${runId === item.id ? 'selected' : ''}`} onClick={() => setRun(item.id)}><span className={`run-dot ${statusClass(item.status)}`} /><span className="run-item-name">{item.prompt}</span><small>{statusNames[item.status]}</small></button>)}{!runs.length && <p className="sidebar-empty">Chưa có lượt chạy.</p>}</div></>}
         <div className="sidebar-footer"><div className="user-avatar">L</div><span><strong>Local user</strong><small>API M4 · WSL2</small></span><button aria-label="Đăng xuất" title="Đăng xuất" onClick={() => setToken('')}><LogOut size={17} /></button></div>
       </aside>
 
       <main className="main-area">
         <header className="topbar"><div className="breadcrumbs"><span>Dự án</span><ChevronRight size={14} /><strong>{selectedProject?.name || 'Chưa chọn dự án'}</strong>{run && <><ChevronRight size={14} /><span className="run-short">{run.id.slice(0, 8)}</span></>}</div><div className="topbar-right"><span className="api-online"><span /> API kết nối</span><button className="icon-button" title="Yêu cầu phê duyệt" aria-label="Yêu cầu phê duyệt" onClick={() => setShowApproval(true)}><Bell size={18} />{pendingApprovals.length > 0 && <i>{pendingApprovals.length}</i>}</button><div className="header-avatar">L</div></div></header>
-        <div className="mobile-switcher"><select aria-label="Chọn dự án" value={projectId || ''} onChange={(event) => setProject(event.target.value || null)}><option value="">Chọn dự án</option>{projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><select aria-label="Chọn lượt chạy" value={runId || ''} onChange={(event) => setRun(event.target.value || null)}><option value="">Chọn lượt chạy</option>{runs.map((item) => <option key={item.id} value={item.id}>{item.prompt}</option>)}</select><button aria-label="Tạo dự án" onClick={() => setShowProjectForm(!showProjectForm)}><Plus size={17} /></button></div>
+        <div className="mobile-switcher"><select aria-label="Chọn dự án" value={projectId || ''} onChange={(event) => setProject(event.target.value || null)}><option value="">Chọn dự án</option>{projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><select aria-label="Chọn lượt chạy" value={runId || ''} onChange={(event) => setRun(event.target.value || null)}><option value="">Chọn lượt chạy</option>{runs.map((item) => <option key={item.id} value={item.id}>{item.prompt}</option>)}</select><button aria-label="Tạo dự án" onClick={() => setShowProjectForm(!showProjectForm)}><Plus size={17} /></button>{selectedProject && <button aria-label={`Xóa dự án ${selectedProject.name}`} onClick={() => setProjectToDelete(selectedProject)}><Trash2 size={17} /></button>}</div>
         {showProjectForm && <form className="mobile-project-form" onSubmit={createProject}><input aria-label="Tên dự án mới trên điện thoại" value={newProject} onChange={(event) => setNewProject(event.target.value)} placeholder="Tên dự án mới" /><button className="primary-button" type="submit" disabled={busy === 'project'}>Tạo</button></form>}
         <div className="page-content">
           {error && <div className="banner-error" role="alert">{error}<button onClick={() => setError('')} aria-label="Đóng thông báo"><X size={16} /></button></div>}
@@ -205,6 +226,7 @@ function Studio({ token }: { token: string }) {
         </div>
       </main>
 
+      {projectToDelete && <div className="modal-backdrop" onClick={() => setProjectToDelete(null)}><div className="approval-modal delete-project-modal" role="dialog" aria-modal="true" aria-label="Xóa dự án" onClick={(event) => event.stopPropagation()}><div className="modal-heading"><h2>Xóa dự án</h2><button aria-label="Đóng" onClick={() => setProjectToDelete(null)}><X size={18} /></button></div><p>Bạn có chắc muốn xóa <strong>{projectToDelete.name}</strong>?</p><p>Toàn bộ lượt chạy, log và mã nguồn đã tạo của dự án này sẽ bị xóa. Hãy hủy các lượt đang chạy trước.</p><div className="delete-project-actions"><button onClick={() => setProjectToDelete(null)} disabled={busy === 'delete-project'}>Giữ lại</button><button className="danger-button" onClick={deleteProject} disabled={busy === 'delete-project'}><Trash2 size={15} /> {busy === 'delete-project' ? 'Đang xóa…' : 'Xóa dự án'}</button></div></div></div>}
       {showApproval && <div className="modal-backdrop" onClick={() => setShowApproval(false)}><div className="approval-modal" role="dialog" aria-modal="true" aria-label="Yêu cầu phê duyệt" onClick={(event) => event.stopPropagation()}><div className="modal-heading"><h2>Yêu cầu phê duyệt</h2><button aria-label="Đóng" onClick={() => setShowApproval(false)}><X size={18} /></button></div>{pendingApprovals.length ? pendingApprovals.map((approval) => <div key={approval.id} className="approval-item"><strong>{approval.action}</strong><pre>{JSON.stringify(approval.payload, null, 2)}</pre><div><button disabled={busy === 'approval'} onClick={() => decide(approval.id, 'reject')}>Từ chối</button><button className="primary-button" disabled={busy === 'approval'} onClick={() => decide(approval.id, 'approve')}><CircleCheck size={15} /> Phê duyệt</button></div></div>) : <p className="empty-note">Hiện không có yêu cầu đang chờ.</p>}</div></div>}
     </div>
   )

@@ -27,6 +27,16 @@ async function mockPlatform(page: Page) {
       projects.push(project)
       return route.fulfill(json(project, 201))
     }
+    if (/^\/api\/projects\/[^/]+$/.test(path) && method === 'DELETE') {
+      const id = path.split('/')[3]
+      if (runs.some((run) => run.project_id === id && !['COMPLETED', 'FAILED', 'BLOCKED', 'CANCELLED'].includes(run.status))) {
+        return route.fulfill(json({ detail: 'Hãy hủy hoặc hoàn tất các lượt chạy trước khi xóa dự án' }, 409))
+      }
+      const index = projects.findIndex((project) => project.id === id)
+      if (index < 0) return route.fulfill(json({ detail: 'project not found' }, 404))
+      projects.splice(index, 1)
+      return route.fulfill(json({ deleted: true, removed_runs: runs.filter((run) => run.project_id === id).length, cleanup_failed: false }))
+    }
     if (/^\/api\/projects\/[^/]+\/runs$/.test(path) && method === 'GET') return route.fulfill(json(runs.filter((run) => run.project_id === path.split('/')[3])))
     if (/^\/api\/projects\/[^/]+\/runs$/.test(path) && method === 'POST') {
       const run: MockRun = { id: `r${runs.length + 1}`, project_id: path.split('/')[3], prompt: request.postDataJSON().prompt as string, status: 'CREATED', version: 0, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), report_ref: null }
@@ -65,6 +75,19 @@ test('shows live agent activity and a pending cancel request', async ({ page }) 
   await expect(page.getByText('Codex đang phân tích yêu cầu').first()).toBeVisible()
   await page.getByRole('button', { name: 'Hủy', exact: true }).click()
   await expect(page.getByText('Đang hủy lượt chạy…')).toBeVisible()
+})
+
+test('deletes a finished project after confirmation and blocks active work', async ({ page }) => {
+  const state = await mockPlatform(page)
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Xóa dự án Task Management' }).click()
+  await expect(page.getByRole('dialog', { name: 'Xóa dự án' })).toBeVisible()
+  await page.getByRole('button', { name: 'Xóa dự án', exact: true }).click()
+  await expect(page.locator('.banner-error')).toContainText('Hãy hủy hoặc hoàn tất')
+  state.runs[0].status = 'CANCELLED'
+  await page.getByRole('button', { name: 'Xóa dự án', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: 'Xóa dự án' })).toBeHidden()
+  await expect(page.getByText('Tạo dự án đầu tiên để bắt đầu.')).toBeVisible()
 })
 
 test('shows task graph, progress, code and test output from API data', async ({ page }) => {

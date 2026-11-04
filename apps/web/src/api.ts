@@ -49,6 +49,8 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ name }),
     }),
+  deleteProject: (token: string, projectId: string) =>
+    request<{ deleted: boolean; removed_runs: number; cleanup_failed: boolean }>(`/api/projects/${projectId}`, token, { method: 'DELETE' }),
   runs: (token: string, projectId: string) =>
     request<Run[]>(`/api/projects/${projectId}/runs`, token),
   createRun: (token: string, projectId: string, prompt: string, engine: 'demo' | 'codex' = 'demo') =>
