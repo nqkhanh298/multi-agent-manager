@@ -74,8 +74,11 @@ def control_for(run_id: str) -> str | None:
 
 def record_m3_event(run_id: str, event_type: str, payload: dict) -> None:
     with SessionLocal.begin() as session:
-        task = session.scalar(
-            select(Task).where(Task.run_id == run_id, Task.task_key == payload["task_id"])
+        task_id = payload.get("task_id")
+        task = (
+            session.scalar(select(Task).where(Task.run_id == run_id, Task.task_key == task_id))
+            if task_id is not None
+            else None
         )
         if task is not None:
             if event_type == "task.status":
