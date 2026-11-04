@@ -14,7 +14,7 @@ A local coding platform prototype with task orchestration, isolated execution, a
 | Area | Capability |
 | --- | --- |
 | Agent runtime | Tool-calling adapter, bounded steps, isolated file and command tools |
-| Codex path | Per-user ChatGPT connection, automatic target selection, eight role skills and sessions, Python CLI or standalone HTML/CSS/JS source, Docker tests, source ZIP |
+| Agent providers | Codex, Claude, or Gemini per role and model; automatic target selection; eight role skills and sessions; Python CLI or standalone HTML/CSS/JS source, Docker tests, source ZIP |
 | Orchestration | Validated task DAG, Coordinator and QA, checkpointing, repair loop |
 | Parallel work | Git worktrees for independent tasks, ordered merges, integration QA |
 | Platform backend | FastAPI, PostgreSQL, Redis worker, bearer auth, ordered events, WebSocket replay, run controls, source ZIP |
@@ -70,7 +70,9 @@ npm ci
 npm run dev
 ```
 
-Open **http://localhost:5173/** and paste the local platform API token. Select **Kết nối ChatGPT** in the dashboard and authorize your account in the browser; the device-code option is available if the browser callback does not work. Create a project and describe what you want. Codex chooses a browser app by default, or a Python terminal program when the request explicitly calls for a command-line workflow. Open **Preview** to use the app. For terminal programs, enter responses on separate lines and click **Chạy thử**; each click runs the program from the beginning inside Docker. Source, README, tests and ZIP remain available. The fixed Task Manager benchmark remains accessible with `engine: "demo"` through the API. The API explorer is at **http://localhost:8000/docs**. The platform API token and Codex login are separate credentials.
+Open **http://localhost:5173/** and paste the local platform API token. Connect ChatGPT in the dashboard if you assign any role to Codex; the device-code option is available if the browser callback does not work. Create a project and describe what you want. Coordinator's configured provider chooses a browser app by default, or a Python terminal program when the request explicitly calls for a command-line workflow. Open **Preview** to use the app. For terminal programs, enter responses on separate lines and click **Chạy thử**; each click runs the program from the beginning inside Docker. Source, README, tests and ZIP remain available. The fixed Task Manager benchmark remains accessible with `engine: "demo"` through the API. The API explorer is at **http://localhost:8000/docs**. The platform API token and provider connections are separate credentials.
+
+To use different AI providers for specialist roles, open **AI cho từng vai trò**. Connect Claude and/or Gemini with their API keys, choose a provider and model for each role, then save before starting a new run. Model lists are fetched from the corresponding provider. The target selector follows Coordinator's provider. See [provider setup and limits](docs/multi-provider-roles.md).
 
 For smaller offline demonstrations, run `python -m coding_platform.cli demo`, `m2-demo`, or `m3-demo` from the repository root in Ubuntu. The first creates a calculator and runs pytest; M2 demonstrates a failed test followed by repair; M3 builds and merges backend and frontend branches.
 

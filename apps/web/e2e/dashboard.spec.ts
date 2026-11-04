@@ -20,6 +20,8 @@ async function mockPlatform(page: Page, connected = true) {
     const path = new URL(request.url()).pathname
     const method = request.method()
     if (path === '/api/codex/account') return route.fulfill(json({ connected, email: connected ? 'user@example.com' : null, plan_type: null }))
+    if (path === '/api/ai/roles' && method === 'GET') return route.fulfill(json({ assignments: Object.fromEntries(['coordinator', 'researcher', 'architect', 'designer', 'developer', 'qa', 'writer', 'release'].map((role) => [role, { provider: 'codex', model: '' }])), keys: { claude: false, gemini: false } }))
+    if (path === '/api/ai/models/codex') return route.fulfill(json({ provider: 'codex', models: ['gpt-6.1-sol', 'gpt-6-astra'] }))
     if (path === '/api/codex/login') return route.fulfill(json({ login_id: 'login-1', auth_url: null, verification_url: 'https://auth.openai.com/codex/device', user_code: 'ABCD-1234' }))
     if (path === '/api/projects' && method === 'GET') return route.fulfill(json(projects))
     if (path === '/api/projects' && method === 'POST') {
@@ -139,6 +141,24 @@ test('runs generated terminal source from Preview without a mode choice', async 
   await page.getByRole('button', { name: 'Chạy thử' }).click()
   await expect(page.locator('.terminal-preview .terminal-output')).toContainText('Xin chào An')
   await expect(page.getByRole('radio')).toHaveCount(0)
+})
+
+test('assigns a specific model to a role and saves the choice', async ({ page }) => {
+  await mockPlatform(page)
+  let saved: Record<string, { provider: string; model: string }> | null = null
+  await page.route('**/api/ai/roles', async (route) => {
+    if (route.request().method() === 'PUT') {
+      saved = (route.request().postDataJSON() as { assignments: Record<string, { provider: string; model: string }> }).assignments
+      return route.fulfill({ json: { assignments: saved } })
+    }
+    return route.fallback()
+  })
+  await page.goto('/')
+  await page.getByRole('button', { name: /AI cho từng vai trò/ }).click()
+  await page.getByLabel('Model cho Điều phối').fill('gpt-6.1-sol')
+  await page.getByRole('button', { name: 'Lưu cấu hình vai trò' }).click()
+  await expect(page.getByRole('status')).toContainText('Đã lưu AI và model')
+  expect(saved?.coordinator).toEqual({ provider: 'codex', model: 'gpt-6.1-sol' })
 })
 
 test('keeps eight specialist stages readable in a horizontal workflow', async ({ page }) => {

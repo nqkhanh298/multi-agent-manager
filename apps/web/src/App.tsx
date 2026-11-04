@@ -8,6 +8,7 @@ import {
 import { api } from './api'
 import { Login } from './components/Login'
 import { CodexConnection, useCodexAccount } from './components/CodexConnection'
+import { RoleSettings } from './components/RoleSettings'
 import { AgentActivity } from './components/AgentActivity'
 import { ProjectList } from './components/ProjectList'
 import { Workflow } from './components/Workflow'
@@ -71,6 +72,8 @@ function Studio({ token }: { token: string }) {
 
   const projectsQuery = useQuery({ queryKey: ['projects'], queryFn: () => api.projects(token), retry: false })
   const codexAccount = useCodexAccount(token)
+  const roleSettings = useQuery({ queryKey: ['ai-roles'], queryFn: () => api.roleSettings(token), retry: false })
+  const needsCodex = !roleSettings.data || Object.values(roleSettings.data.assignments).some((item) => item.provider === 'codex')
   const runsQuery = useQuery({ queryKey: ['runs', projectId], queryFn: () => api.runs(token, projectId!), enabled: Boolean(projectId), refetchInterval: 4000 })
   const runQuery = useQuery({ queryKey: ['run', runId], queryFn: () => api.run(token, runId!), enabled: Boolean(runId), refetchInterval: 2000 })
   const tasksQuery = useQuery({ queryKey: ['tasks', runId], queryFn: () => api.tasks(token, runId!), enabled: Boolean(runId), refetchInterval: 2000 })
@@ -216,7 +219,8 @@ function Studio({ token }: { token: string }) {
           <div className="page-heading"><div><span className="eyebrow">PROJECT WORKSPACE</span><h1>{selectedProject?.name || 'Bắt đầu dự án mới'}</h1><p>Theo dõi từng task, file và kết quả kiểm thử từ API M4.</p></div>{run && <div className={`run-status-pill ${statusClass(run.status)}`}><span className="pulse-dot" />{run.control_request === 'cancel' ? 'Đang hủy…' : run.control_request === 'pause' ? 'Đang tạm dừng…' : statusNames[run.status] || run.status}</div>}</div>
 
           <CodexConnection token={token} />
-          <section className="composer panel"><div className="composer-icon"><Bot size={22} /></div><form onSubmit={createRun}><label htmlFor="run-prompt">Bạn muốn hệ thống xây gì?</label><div className="composer-row"><textarea id="run-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Mô tả ứng dụng bạn muốn tạo, không cần chọn công nghệ…" rows={2} disabled={!projectId} /><button className="primary-button" type="submit" disabled={!projectId || !prompt.trim() || busy === 'run' || !codexAccount.data?.connected}>{busy === 'run' ? 'Đang tạo…' : 'Bắt đầu chạy'} <Send size={16} /></button></div><small>Hệ thống tự chọn cách tạo ứng dụng. Kết quả chạy được xem trong tab Preview.</small></form></section>
+          <RoleSettings token={token} />
+          <section className="composer panel"><div className="composer-icon"><Bot size={22} /></div><form onSubmit={createRun}><label htmlFor="run-prompt">Bạn muốn hệ thống xây gì?</label><div className="composer-row"><textarea id="run-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Mô tả ứng dụng bạn muốn tạo, không cần chọn công nghệ…" rows={2} disabled={!projectId} /><button className="primary-button" type="submit" disabled={!projectId || !prompt.trim() || busy === 'run' || (needsCodex && !codexAccount.data?.connected)}>{busy === 'run' ? 'Đang tạo…' : 'Bắt đầu chạy'} <Send size={16} /></button></div><small>Hệ thống tự chọn cách tạo ứng dụng. Kết quả chạy được xem trong tab Preview.</small></form></section>
 
           <div className="metrics-grid"><div className="metric-card"><span><Activity size={16} /> Tiến độ</span><strong>{tasks.length ? `${progress}%` : '—'}</strong><small>{completed}/{tasks.length} task hoàn thành</small></div><div className="metric-card"><span><WorkflowIcon size={16} /> Tasks</span><strong>{tasks.length || '—'}</strong><small>{tasks.length ? 'Trong DAG hiện tại' : 'Chờ lượt chạy'}</small></div><div className="metric-card"><span><Clock3 size={16} /> Bắt đầu</span><strong className="metric-date">{run ? new Date(run.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '—'}</strong><small>{run ? new Date(run.created_at).toLocaleDateString('vi-VN') : 'Chưa có dữ liệu'}</small></div><div className="metric-card"><span><ShieldCheck size={16} /> Kiểm thử</span><strong className="metric-date">{reportQuery.data?.integration?.exit_code === 0 ? 'Đạt' : run?.status === 'COMPLETED' ? 'Hoàn tất' : '—'}</strong><small>{reportQuery.data?.integration?.stdout ? String(reportQuery.data.integration.stdout).trim().split('\n').at(-1) : 'Chờ QA'}</small></div></div>
 

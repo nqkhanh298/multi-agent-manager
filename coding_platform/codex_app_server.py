@@ -174,6 +174,7 @@ class CodexAppServer:
         output_schema: dict | None = None,
         stop: Callable[[], str | None] | None = None,
         on_activity: Callable[[str, str], None] | None = None,
+        model: str | None = None,
     ) -> str:
         def activity(phase: str, detail: str) -> None:
             if on_activity:
@@ -181,9 +182,12 @@ class CodexAppServer:
 
         activity("connecting", "Đang mở phiên Codex cho vai trò này")
         self.start()
+        thread_params = {"cwd": str(cwd), "approvalPolicy": "on-request", "sandbox": "read-only"}
+        if model:
+            thread_params["model"] = model
         thread = self.call(
             "thread/start",
-            {"cwd": str(cwd), "approvalPolicy": "on-request", "sandbox": "read-only"},
+            thread_params,
             timeout=30,
             stop=stop,
         )

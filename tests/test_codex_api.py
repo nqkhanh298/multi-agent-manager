@@ -13,6 +13,7 @@ from apps.api.models import Base, Project, Run, Task, User
 from apps.api.service import token_digest
 from coding_platform.codex_run import CODEX_TASKS
 from coding_platform.contracts import ToolResult
+from coding_platform.role_providers import default_assignments
 
 
 def test_codex_run_requires_account_and_creates_role_tasks(monkeypatch, tmp_path):
@@ -50,6 +51,7 @@ def test_codex_run_requires_account_and_creates_role_tasks(monkeypatch, tmp_path
     api_module.app.dependency_overrides[get_session] = get_test_session
     monkeypatch.setattr(api_module, "codex_client", lambda user: fake)
     monkeypatch.setattr(api_module, "queue_run", lambda run_id: None)
+    monkeypatch.setattr(api_module, "data_root", lambda: tmp_path)
     try:
         client = TestClient(api_module.app)
         headers = {"Authorization": "Bearer codex-owner-token"}
@@ -67,6 +69,24 @@ def test_codex_run_requires_account_and_creates_role_tasks(monkeypatch, tmp_path
         )
         assert response.status_code == 202
         assert response.json()["engine"] == "codex"
+        roles = client.get("/api/ai/roles", headers=headers)
+        assert roles.status_code == 200
+        assert roles.json()["assignments"]["researcher"]["provider"] == "codex"
+        assert (
+            client.put(
+                "/api/ai/keys/claude", headers=headers, json={"key": "private-key"}
+            ).status_code
+            == 200
+        )
+        assignments = default_assignments()
+        assignments["researcher"] = {"provider": "claude", "model": "claude-sonnet-5-5"}
+        assert (
+            client.put(
+                "/api/ai/roles", headers=headers, json={"assignments": assignments}
+            ).status_code
+            == 200
+        )
+        assert "private-key" not in json.dumps(client.get("/api/ai/roles", headers=headers).json())
         web_response = client.post(
             path, headers=headers, json={"prompt": "Make a browser game", "engine": "codex_web"}
         )
@@ -77,6 +97,9 @@ def test_codex_run_requires_account_and_creates_role_tasks(monkeypatch, tmp_path
         assert auto_response.status_code == 202
         assert auto_response.json()["engine"] == "codex_auto"
         auto_id = auto_response.json()["id"]
+        snapshot = tmp_path / "m3-runs" / auto_id / "role-assignments.json"
+        assert json.loads(snapshot.read_text())["researcher"] == assignments["researcher"]
+        assert "private-key" not in snapshot.read_text()
         run_dir = tmp_path / "m3-runs" / auto_id
         (run_dir / "repo").mkdir(parents=True)
         (run_dir / "repo" / "app.py").write_text("print(input())", encoding="utf-8")
@@ -84,7 +107,6 @@ def test_codex_run_requires_account_and_creates_role_tasks(monkeypatch, tmp_path
             json.dumps({"target": "python_cli", "status": "COMPLETED", "tasks": []}),
             encoding="utf-8",
         )
-        monkeypatch.setattr(api_module, "data_root", lambda: tmp_path)
 
         class FakeSandbox:
             def __init__(self, workspace, image):

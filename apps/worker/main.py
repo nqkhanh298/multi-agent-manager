@@ -39,6 +39,7 @@ from coding_platform.contracts import ToolCall, ToolResult
 from coding_platform.m3 import M3Runner
 from coding_platform.codex_run import CodexRunRunner
 from coding_platform.sandbox import DockerSandbox
+from coding_platform.role_providers import default_assignments
 
 QUEUE = "m4:queue"
 PROCESSING = "m4:processing"
@@ -95,7 +96,10 @@ def record_m3_event(run_id: str, event_type: str, payload: dict) -> None:
                 and event_type == "task.status"
                 and payload["status"] == "RUNNING"
             ):
-                execution = AgentExecution(task_id=task.id, model="Codex")
+                label = str(payload.get("provider", "codex"))
+                if payload.get("model"):
+                    label += " · " + str(payload["model"])
+                execution = AgentExecution(task_id=task.id, model=label)
                 session.add(execution)
             if execution is not None and event_type == "task.status":
                 execution.status = payload["status"]
@@ -223,11 +227,19 @@ def process_run(run_id: str) -> str:
             )
 
         if engine.startswith("codex"):
+            assignment_path = data_root() / "m3-runs" / run_id / "role-assignments.json"
+            assignments = (
+                json.loads(assignment_path.read_text(encoding="utf-8"))
+                if assignment_path.is_file()
+                else default_assignments()
+            )
             report = CodexRunRunner(
                 data_root(),
                 event=lambda kind, payload: record_m3_event(run_id, kind, payload),
                 control=lambda: control_for(run_id),
                 codex_home=data_root() / "codex-accounts" / owner_id,
+                assignments=assignments,
+                ai_account_dir=data_root() / "ai-accounts" / owner_id,
                 target="auto"
                 if engine == "codex_auto"
                 else "web"

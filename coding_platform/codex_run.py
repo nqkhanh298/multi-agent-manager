@@ -9,6 +9,12 @@ from typing import Callable
 from coding_platform.codex_app_server import CodexAppServer, CodexStopped, CodexUnavailable
 from coding_platform.contracts import ToolCall
 from coding_platform.sandbox import DockerSandbox, SandboxCancelled
+from coding_platform.role_providers import (
+    default_assignments,
+    read_key,
+    run_external_role,
+    validate_assignments,
+)
 
 
 @dataclass(frozen=True)
@@ -122,11 +128,15 @@ class CodexRunRunner:
         control: Callable[[], str | None],
         codex_home: Path,
         target: str = "python_cli",
+        assignments: dict | None = None,
+        ai_account_dir: Path | None = None,
     ):
         self.root = root
         self.event = event
         self.control = control
         self.codex_home = codex_home
+        self.assignments = validate_assignments(assignments or default_assignments())
+        self.ai_account_dir = ai_account_dir
         if target not in {"python_cli", "web", "auto"}:
             raise ValueError("unsupported Codex target")
         self.target = target
@@ -215,19 +225,51 @@ class CodexRunRunner:
         save()
         client = CodexAppServer(self.codex_home)
         try:
-            account = client.account().get("account")
-            if not account or account.get("type") != "chatgpt":
-                raise CodexUnavailable("ChatGPT account is not connected in this WSL environment")
+
+            def call_role(
+                role: str,
+                skill: Path,
+                brief: str,
+                *,
+                schema: dict | None = None,
+                activity: Callable[[str, str], None] | None = None,
+            ) -> str:
+                assignment = self.assignments["coordinator" if role == "target_selector" else role]
+                provider, model = assignment["provider"], assignment["model"]
+                if provider == "codex":
+                    return client.run_role(
+                        role,
+                        skill,
+                        brief,
+                        agent_context,
+                        output_schema=schema,
+                        stop=self.control,
+                        on_activity=activity,
+                        **({"model": model} if model else {}),
+                    )
+                if self.ai_account_dir is None:
+                    raise ValueError("AI account directory is required for external providers")
+                key = read_key(self.ai_account_dir, provider)
+                if not key:
+                    raise ValueError(f"{provider} key is missing for {role}")
+                return run_external_role(
+                    provider, model, key, skill, brief, schema, self.control, activity
+                )
+
+            if any(item["provider"] == "codex" for item in self.assignments.values()):
+                account = client.account().get("account")
+                if not account or account.get("type") != "chatgpt":
+                    raise CodexUnavailable(
+                        "ChatGPT account is not connected in this WSL environment"
+                    )
             if self.target == "auto" and report["target"] is None:
                 self.event("run.target_selection", {"status": "RUNNING"})
-                selected = client.run_role(
+                selected = call_role(
                     "target_selector",
                     Path(__file__).resolve().parents[1] / ".agents/skills/target_selector/SKILL.md",
                     f"Choose the application preview target for this request:\n{prompt}",
-                    agent_context,
-                    output_schema=TARGET_SCHEMA,
-                    stop=self.control,
-                    on_activity=lambda phase, detail: self.event(
+                    schema=TARGET_SCHEMA,
+                    activity=lambda phase, detail: self.event(
                         "run.target_activity", {"phase": phase, "detail": detail}
                     ),
                 )
@@ -235,6 +277,7 @@ class CodexRunRunner:
                 save()
                 self.event("run.target_selected", {"target": report["target"]})
             selected_target = report["target"]
+
             for task in CODEX_TASKS:
                 if task.id in completed:
                     continue
@@ -242,7 +285,8 @@ class CodexRunRunner:
                 if requested in {"PAUSED", "CANCELLED"}:
                     report["status"] = requested
                     break
-                self.event("task.status", {"task_id": task.id, "status": "RUNNING"})
+                assignment = self.assignments[task.agent]
+                self.event("task.status", {"task_id": task.id, "status": "RUNNING", **assignment})
 
                 def activity(phase: str, detail: str) -> None:
                     self.event(
@@ -272,7 +316,7 @@ class CodexRunRunner:
                 )
                 if task.agent == "developer":
                     web = selected_target == "web"
-                    answer = client.run_role(
+                    answer = call_role(
                         task.agent,
                         skill,
                         brief
@@ -281,10 +325,8 @@ class CodexRunRunner:
                             if web
                             else "\n\nReturn only JSON matching the requested schema for a Python 3.11 CLI app and pytest tests. Use standard library only."
                         ),
-                        agent_context,
-                        output_schema=WEB_DEVELOPER_SCHEMA if web else DEVELOPER_SCHEMA,
-                        stop=self.control,
-                        on_activity=activity,
+                        schema=WEB_DEVELOPER_SCHEMA if web else DEVELOPER_SCHEMA,
+                        activity=activity,
                     )
                     files = (
                         parse_web_source(answer)
@@ -338,26 +380,22 @@ class CodexRunRunner:
                         "stdout": test.stdout[:8000],
                         "stderr": test.stderr[:8000],
                     }
-                    answer = client.run_role(
+                    answer = call_role(
                         task.agent,
                         skill,
                         brief
                         + f"\n\nDocker {'Node tests' if web else 'pytest'} exit code: {test.exit_code}\nstdout:\n{test.stdout[:5000]}\nstderr:\n{test.stderr[:2000]}\nAssess the result; never claim a pass if exit code is nonzero.",
-                        agent_context,
-                        stop=self.control,
-                        on_activity=activity,
+                        activity=activity,
                     )
                     context[task.agent] = answer
                     if not test.ok:
                         raise RuntimeError("generated app failed Docker tests; see test report")
                 else:
-                    answer = client.run_role(
+                    answer = call_role(
                         task.agent,
                         skill,
                         brief,
-                        agent_context,
-                        stop=self.control,
-                        on_activity=activity,
+                        activity=activity,
                     )
                     if not answer:
                         raise RuntimeError(f"Codex {task.agent} returned an empty result")
@@ -374,6 +412,8 @@ class CodexRunRunner:
                     {
                         "task_id": task.id,
                         "status": "COMPLETED",
+                        "provider": assignment["provider"],
+                        "model": assignment["model"],
                         "test_stdout": report["integration"]["stdout"]
                         if task.agent == "qa"
                         else "",

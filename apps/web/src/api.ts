@@ -3,6 +3,9 @@ import type {
   Artifact,
   CodexAccount,
   CodexLogin,
+  AIProvider,
+  RoleSettings,
+  RoleAssignment,
   Project,
   Run,
   RunEvent,
@@ -43,6 +46,11 @@ export const api = {
       body: JSON.stringify({ method }),
     }),
   codexLogout: (token: string) => request<{ connected: boolean }>('/api/codex/logout', token, { method: 'POST' }),
+  roleSettings: (token: string) => request<RoleSettings>('/api/ai/roles', token),
+  saveRoles: (token: string, assignments: Record<string, RoleAssignment>) => request<{ assignments: Record<string, RoleAssignment> }>('/api/ai/roles', token, { method: 'PUT', body: JSON.stringify({ assignments }) }),
+  saveProviderKey: (token: string, provider: 'claude' | 'gemini', key: string) => request<{ connected: boolean }>(`/api/ai/keys/${provider}`, token, { method: 'PUT', body: JSON.stringify({ key }) }),
+  deleteProviderKey: (token: string, provider: 'claude' | 'gemini') => request<{ connected: boolean }>(`/api/ai/keys/${provider}`, token, { method: 'DELETE' }),
+  providerModels: (token: string, provider: AIProvider) => request<{ models: string[] }>(`/api/ai/models/${provider}`, token),
   projects: (token: string) => request<Project[]>('/api/projects', token),
   createProject: (token: string, name: string) =>
     request<Project>('/api/projects', token, {

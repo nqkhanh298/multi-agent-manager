@@ -212,6 +212,19 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .terminal-preview textarea { width: 100%; resize: vertical; min-height: 80px; padding: 10px; color: #eef3ff; background: #0b1120; border: 1px solid #344266; border-radius: 8px; font: 12px/1.5 monospace; }
 .terminal-preview button { align-self: flex-start; }
 .terminal-preview .terminal-output { flex: 1; min-height: 120px; overflow: auto; margin: 0; }
+.role-settings { margin: 12px 0; }
+.role-settings-toggle { display: flex; width: 100%; justify-content: space-between; align-items: center; padding: 12px 16px; color: #e8edff; background: transparent; border: 0; cursor: pointer; font-weight: 700; }
+.role-settings-toggle span { color: #a9b8df; font-size: 12px; font-weight: 500; }
+.role-settings-body { display: grid; gap: 14px; padding: 0 16px 16px; }
+.role-settings-body p { margin: 0; color: #a9b8df; font-size: 12px; }
+.flow-card-model { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 4px 7px; margin-top: 8px; border: 1px solid #50618e; border-radius: 6px; color: #c6d5ff; font-size: 10px; }
+.provider-keys, .role-assignment-list { display: grid; gap: 8px; }
+.provider-key-row, .role-assignment-row { display: grid; grid-template-columns: minmax(105px, 1fr) minmax(130px, 1fr) minmax(170px, 2fr) auto; align-items: center; gap: 8px; }
+.provider-key-row { grid-template-columns: minmax(130px, 1fr) minmax(170px, 3fr) auto auto; }
+.provider-key-row strong, .role-assignment-row strong { color: #dbe4ff; font-size: 12px; }
+.provider-key-row input, .role-assignment-row input, .role-assignment-row select { min-width: 0; padding: 8px; border: 1px solid #344266; border-radius: 7px; color: #e8edff; background: #121b33; font-size: 12px; }
+.provider-key-row button { padding: 8px 10px; border: 1px solid #344266; border-radius: 7px; color: #e8edff; background: #1c2847; cursor: pointer; }
+@media (max-width: 680px) { .provider-key-row, .role-assignment-row { grid-template-columns: 1fr 1fr; } .role-assignment-row input { grid-column: 1 / -1; } }
 .workspace-tabs { display: flex; align-items: center; gap: 4px; padding: 7px 8px 0; border-bottom: 1px solid #2a3554; }
 .workspace-tabs button { background: transparent; color: #9caacb; border: 0; border-bottom: 2px solid transparent; display: flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 650; padding: 8px 11px 10px; }
 .workspace-tabs button.active { color: #fff; border-bottom-color: #8070ff; }
