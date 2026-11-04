@@ -5,7 +5,7 @@ import subprocess
 
 import pytest
 
-from coding_platform.codex_run import CodexRunRunner, parse_source
+from coding_platform.codex_run import CodexRunRunner, parse_source, parse_web_source
 from coding_platform.codex_app_server import CodexAppServer, CodexStopped
 from coding_platform.contracts import ToolResult
 
@@ -116,7 +116,7 @@ def test_codex_roles_generate_files_and_verify_in_sandbox(tmp_path, monkeypatch)
             pass
 
     class FakeSandbox:
-        def __init__(self, workspace, cancel_check=None):
+        def __init__(self, workspace, image="ai-coding-m1:local", cancel_check=None):
             self.workspace = workspace
 
         def execute(self, call):
@@ -174,3 +174,67 @@ def test_codex_roles_generate_files_and_verify_in_sandbox(tmp_path, monkeypatch)
         )
         == 8
     )
+
+
+def test_web_source_schema_and_sandbox_target(tmp_path, monkeypatch):
+    source = {
+        "index_html": "<html><link rel='stylesheet' href='styles.css'><body><button>Play</button><script src='app.js'></script></body></html>",
+        "styles_css": "button { color: purple; }",
+        "app_js": "globalThis.gameLogic = { win: () => true };",
+        "test_js": "import { test } from 'node:test'; test('works', () => {});",
+    }
+    assert set(parse_web_source(json.dumps(source))) == {
+        "index.html",
+        "styles.css",
+        "app.js",
+        "test.js",
+    }
+    with pytest.raises(ValueError):
+        parse_web_source(json.dumps({**source, "extra": "unexpected"}))
+    with pytest.raises(ValueError):
+        parse_web_source(
+            json.dumps({**source, "index_html": "<html><body>Missing assets</body></html>"})
+        )
+
+    images = []
+    commands = []
+    timeouts = []
+
+    class FakeCodex:
+        def __init__(self, codex_home):
+            pass
+
+        def account(self):
+            return {"account": {"type": "chatgpt"}}
+
+        def run_role(self, role, *args, **kwargs):
+            return json.dumps(source) if role == "developer" else f"{role} notes"
+
+        def close(self):
+            pass
+
+    class FakeSandbox:
+        def __init__(self, workspace, image="", cancel_check=None):
+            self.workspace = workspace
+            images.append(image)
+
+        def execute(self, call):
+            if call.name == "write_file":
+                (self.workspace / call.arguments["path"]).write_text(
+                    call.arguments["content"], encoding="utf-8"
+                )
+            else:
+                commands.append(call.arguments["argv"])
+                timeouts.append(call.arguments["timeout_seconds"])
+            return ToolResult(call.id, True, 0, stdout="1 pass")
+
+    monkeypatch.setattr("coding_platform.codex_run.CodexAppServer", FakeCodex)
+    monkeypatch.setattr("coding_platform.codex_run.DockerSandbox", FakeSandbox)
+    report = CodexRunRunner(
+        tmp_path, lambda *args: None, lambda: None, tmp_path / "account", target="web"
+    ).run("Build a game", "web-run")
+    assert report["status"] == "COMPLETED"
+    assert images == ["ai-coding-m3-frontend:local"] * 2
+    assert commands == [["node", "--test", "test.js"]]
+    assert timeouts == [60]
+    assert (tmp_path / "m3-runs/web-run/repo/index.html").is_file()

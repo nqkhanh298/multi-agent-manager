@@ -65,7 +65,7 @@ class ProjectCreate(BaseModel):
 
 class RunCreate(BaseModel):
     prompt: str = Field(min_length=1, max_length=10000)
-    engine: str = Field(default="demo", pattern="^(demo|codex)$")
+    engine: str = Field(default="demo", pattern="^(demo|codex|codex_web)$")
 
 
 class CodexLoginRequest(BaseModel):
@@ -123,8 +123,8 @@ def run_payload(run: Run) -> dict:
         "created_at": run.created_at,
         "updated_at": run.updated_at,
         "report_ref": f"/api/runs/{run.id}/report" if run.report_ref else None,
-        "budget_usd": None if run.engine == "codex" else run.budget_usd,
-        "spent_usd": None if run.engine == "codex" else run.spent_usd,
+        "budget_usd": None if run.engine.startswith("codex") else run.budget_usd,
+        "spent_usd": None if run.engine.startswith("codex") else run.spent_usd,
         "max_seconds": run.max_seconds,
     }
 
@@ -238,7 +238,7 @@ def create_run(
         is None
     ):
         raise HTTPException(404, "project not found")
-    if body.engine == "codex":
+    if body.engine.startswith("codex"):
         try:
             account = codex_client(user).account().get("account")
         except CodexUnavailable as exc:

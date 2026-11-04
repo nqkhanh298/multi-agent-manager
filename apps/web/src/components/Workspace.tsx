@@ -1,8 +1,9 @@
 import { lazy, Suspense, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { FileCode2, FileDiff, FileText, FolderTree, TerminalSquare, TestTube2 } from 'lucide-react'
+import { FileCode2, FileDiff, FileText, FolderTree, MonitorPlay, TerminalSquare, TestTube2 } from 'lucide-react'
 import { api } from '../api'
 import { useUI } from '../store'
+import { WebPreview } from './WebPreview'
 import type { RunEvent, RunReport, SourceFile } from '../types'
 
 const MonacoView = lazy(() => import('./MonacoView'))
@@ -26,11 +27,14 @@ function testOutput(report?: RunReport): string {
   return parts.join('\n') || 'Chưa có kết quả kiểm thử.'
 }
 
-export function Workspace({ token, runId, files, report, events }: { token: string; runId: string; files: SourceFile[]; report?: RunReport; events: RunEvent[] }) {
+export function Workspace({ token, runId, files, report, events, webApp = false }: { token: string; runId: string; files: SourceFile[]; report?: RunReport; events: RunEvent[]; webApp?: boolean }) {
   const filePath = useUI((state) => state.filePath)
   const setFile = useUI((state) => state.setFile)
   const tab = useUI((state) => state.workspaceTab)
   const setTab = useUI((state) => state.setWorkspaceTab)
+  useEffect(() => {
+    if (tab === 'preview' && !webApp) setTab('code')
+  }, [tab, webApp, setTab])
   const fileQuery = useQuery({
     queryKey: ['file', runId, filePath],
     queryFn: () => api.file(token, runId, filePath!),
@@ -46,18 +50,20 @@ export function Workspace({ token, runId, files, report, events }: { token: stri
 
   useEffect(() => {
     if (files.length && !files.some((file) => file.path === filePath)) {
-      setFile(files.find((file) => file.path === 'backend.py')?.path || files[0].path)
+      setFile(files.find((file) => file.path === 'index.html')?.path || files.find((file) => file.path === 'backend.py')?.path || files[0].path)
     }
   }, [files, filePath, setFile])
 
   return (
-    <section className="workspace-panel panel">
+    <section className={`workspace-panel panel ${tab === 'preview' && webApp ? 'workspace-preview' : ''}`}>
       <div className="workspace-tabs" role="tablist" aria-label="Không gian làm việc">
+        {webApp && <button role="tab" aria-selected={tab === 'preview'} className={tab === 'preview' ? 'active' : ''} onClick={() => setTab('preview')}><MonitorPlay size={15} /> Preview</button>}
         <button role="tab" aria-selected={tab === 'code'} className={tab === 'code' ? 'active' : ''} onClick={() => setTab('code')}><FileCode2 size={15} /> Code</button>
         <button role="tab" aria-selected={tab === 'diff'} className={tab === 'diff' ? 'active' : ''} onClick={() => setTab('diff')}><FileDiff size={15} /> Diff</button>
         <button role="tab" aria-selected={tab === 'tests'} className={tab === 'tests' ? 'active' : ''} onClick={() => setTab('tests')}><TestTube2 size={15} /> Tests</button>
         <button role="tab" aria-selected={tab === 'logs'} className={tab === 'logs' ? 'active' : ''} onClick={() => setTab('logs')}><TerminalSquare size={15} /> Events <span className="tab-count">{events.length}</span></button>
       </div>
+      {tab === 'preview' && webApp && <WebPreview token={token} runId={runId} />}
       {tab === 'code' && <div className="code-workspace">
         <aside className="file-explorer">
           <div className="subpanel-title"><FolderTree size={15} /> File Explorer <span>{files.length}</span></div>

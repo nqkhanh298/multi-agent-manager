@@ -30,7 +30,7 @@ export interface Run {
   id: string
   project_id: string
   prompt: string
-  engine?: 'demo' | 'codex'
+  engine?: 'demo' | 'codex' | 'codex_web'
   status: RunStatus
   control_request?: 'pause' | 'cancel' | null
   version: number

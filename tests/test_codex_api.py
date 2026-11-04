@@ -64,6 +64,12 @@ def test_codex_run_requires_account_and_creates_role_tasks(monkeypatch):
         )
         assert response.status_code == 202
         assert response.json()["engine"] == "codex"
+        web_response = client.post(
+            path, headers=headers, json={"prompt": "Make a browser game", "engine": "codex_web"}
+        )
+        assert web_response.status_code == 202
+        assert web_response.json()["engine"] == "codex_web"
+        assert web_response.json()["budget_usd"] is None
         run_id = response.json()["id"]
         with sessions.begin() as session:
             session.get(Run, run_id).status = "RUNNING"

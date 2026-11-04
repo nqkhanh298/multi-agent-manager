@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 
-type MockRun = { id: string; project_id: string; prompt: string; status: string; version: number; created_at: string; updated_at: string; report_ref: null; engine?: 'demo' | 'codex'; control_request?: 'pause' | 'cancel' | null }
+type MockRun = { id: string; project_id: string; prompt: string; status: string; version: number; created_at: string; updated_at: string; report_ref: null; engine?: 'demo' | 'codex' | 'codex_web'; control_request?: 'pause' | 'cancel' | null }
 
 async function mockPlatform(page: Page) {
   const projects = [{ id: 'p1', name: 'Task Management', description: '', created_at: '2026-11-04T00:00:00Z' }]
@@ -58,7 +58,7 @@ async function mockPlatform(page: Page) {
     if (path.endsWith('/download')) return route.fulfill({ status: 200, headers: { 'Content-Type': 'application/zip', 'Content-Disposition': 'attachment; filename="source.zip"' }, body: 'PK\u0003\u0004' })
     if (method === 'POST' && path.endsWith('/pause')) { run.status = 'PAUSED'; return route.fulfill(json(run)) }
     if (method === 'POST' && path.endsWith('/resume')) { run.status = 'CREATED'; return route.fulfill(json(run)) }
-    if (method === 'POST' && path.endsWith('/cancel')) { if (run.engine === 'codex') run.control_request = 'cancel'; else run.status = 'CANCELLED'; return route.fulfill(json(run)) }
+    if (method === 'POST' && path.endsWith('/cancel')) { if (run.engine?.startsWith('codex')) run.control_request = 'cancel'; else run.status = 'CANCELLED'; return route.fulfill(json(run)) }
     if (method === 'POST' && path.includes('/approvals/')) { approvals[0].status = 'APPROVED'; return route.fulfill(json({ id: 'a1', status: 'APPROVED' })) }
     return route.fulfill(json([]))
   })
@@ -103,6 +103,25 @@ test('shows task graph, progress, code and test output from API data', async ({ 
   await expect(page.locator('.terminal-output')).toContainText('4 passed')
   await page.getByRole('tab', { name: /Events/ }).click()
   await expect(page.locator('.event-log .event-type')).toContainText('run.created')
+})
+
+test('plays a generated web game in an isolated preview', async ({ page }) => {
+  const state = await mockPlatform(page)
+  state.runs[0].engine = 'codex_web'
+  const source: Record<string, string> = {
+    'index.html': '<!doctype html><html><head><title>Game</title></head><body><button id="play">Chơi</button><p id="score">0</p></body></html>',
+    'styles.css': 'body { background: #171d38; color: white; }',
+    'app.js': 'document.getElementById("play").addEventListener("click", () => { document.getElementById("score").textContent = "1"; });',
+  }
+  for (const [name, content] of Object.entries(source)) {
+    await page.route(`**/api/runs/r1/files/${name}`, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ path: name, content }) }))
+  }
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Preview' }).click()
+  const game = page.frameLocator('iframe[title="Xem trước ứng dụng web"]')
+  await game.getByRole('button', { name: 'Chơi' }).click()
+  await expect(game.locator('#score')).toHaveText('1')
+  await expect(page.locator('iframe[title="Xem trước ứng dụng web"]')).toHaveAttribute('sandbox', 'allow-scripts')
 })
 
 test('keeps eight specialist stages readable in a horizontal workflow', async ({ page }) => {

@@ -88,7 +88,7 @@ def record_m3_event(run_id: str, event_type: str, payload: dict) -> None:
             run_engine = session.scalar(select(Run.engine).where(Run.id == run_id))
             if (
                 execution is None
-                and run_engine == "codex"
+                and run_engine.startswith("codex")
                 and event_type == "task.status"
                 and payload["status"] == "RUNNING"
             ):
@@ -219,12 +219,13 @@ def process_run(run_id: str) -> str:
                 run_id,
             )
 
-        if engine == "codex":
+        if engine.startswith("codex"):
             report = CodexRunRunner(
                 data_root(),
                 event=lambda kind, payload: record_m3_event(run_id, kind, payload),
                 control=lambda: control_for(run_id),
                 codex_home=data_root() / "codex-accounts" / owner_id,
+                target="web" if engine == "codex_web" else "python_cli",
             ).run(prompt, run_id)
         else:
             report = M3Runner(

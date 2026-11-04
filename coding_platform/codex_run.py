@@ -1,4 +1,4 @@
-"""Real Codex role sessions for a local Python application vertical slice."""
+"""Real Codex role sessions for local CLI and browser applications."""
 
 import json
 import subprocess
@@ -41,6 +41,15 @@ DEVELOPER_SCHEMA = {
     "additionalProperties": False,
 }
 
+WEB_DEVELOPER_SCHEMA = {
+    "type": "object",
+    "properties": {
+        key: {"type": "string"} for key in ("index_html", "styles_css", "app_js", "test_js")
+    },
+    "required": ["index_html", "styles_css", "app_js", "test_js"],
+    "additionalProperties": False,
+}
+
 
 def commit_generated_source(repo: Path) -> None:
     def git(*args: str) -> None:
@@ -70,6 +79,25 @@ def parse_source(answer: str) -> tuple[str, str]:
     return source, tests
 
 
+def parse_web_source(answer: str) -> dict[str, str]:
+    data = json.loads(answer)
+    if not isinstance(data, dict) or set(data) != set(WEB_DEVELOPER_SCHEMA["required"]):
+        raise ValueError("Codex developer returned invalid web source fields")
+    if not all(
+        isinstance(value, str) and 0 < len(value.encode()) <= 100_000 for value in data.values()
+    ):
+        raise ValueError("Codex developer returned invalid web source size")
+    html = data["index_html"].lower()
+    if not all(part in html for part in ("<body", "styles.css", "app.js")):
+        raise ValueError("Codex developer did not connect the web page to its styles and script")
+    return {
+        "index.html": data["index_html"],
+        "styles.css": data["styles_css"],
+        "app.js": data["app_js"],
+        "test.js": data["test_js"],
+    }
+
+
 class CodexRunRunner:
     def __init__(
         self,
@@ -77,11 +105,15 @@ class CodexRunRunner:
         event: Callable[[str, dict], None],
         control: Callable[[], str | None],
         codex_home: Path,
+        target: str = "python_cli",
     ):
         self.root = root
         self.event = event
         self.control = control
         self.codex_home = codex_home
+        if target not in {"python_cli", "web"}:
+            raise ValueError("unsupported Codex target")
+        self.target = target
 
     def run(self, prompt: str, run_id: str) -> dict:
         run_dir = (self.root / "m3-runs" / run_id).resolve()
@@ -127,11 +159,14 @@ class CodexRunRunner:
             report = json.loads(report_path.read_text(encoding="utf-8"))
             if report.get("status") != "PAUSED":
                 raise ValueError("only paused Codex runs can resume")
+            if report.get("target", "python_cli") != self.target:
+                raise ValueError("Codex target changed during resume")
             report["status"] = "RUNNING"
         else:
             report = {
                 "run_id": run_id,
-                "engine": "codex",
+                "engine": "codex_web" if self.target == "web" else "codex",
+                "target": self.target,
                 "status": "RUNNING",
                 "tasks": [],
                 "integration": None,
@@ -187,25 +222,43 @@ class CodexRunRunner:
                 )
                 if not skill.is_file():
                     raise FileNotFoundError(f"missing {task.agent} skill")
-                brief = f"User request:\n{prompt}\n\n" + "\n\n".join(
+                target_brief = (
+                    "Standalone interactive browser application using plain HTML, CSS, and JavaScript. "
+                    "The user must be able to play through a visual interface in the Preview tab. "
+                    "Use no external packages or network resources."
+                    if self.target == "web"
+                    else "Local Python 3.11 command-line application using only the standard library."
+                )
+                brief = f"Target: {target_brief}\n\nUser request:\n{prompt}\n\n" + "\n\n".join(
                     f"{role.upper()}:\n{text[:8000]}" for role, text in context.items()
                 )
                 if task.agent == "developer":
+                    web = self.target == "web"
                     answer = client.run_role(
                         task.agent,
                         skill,
                         brief
-                        + "\n\nReturn only JSON matching the requested schema for a Python 3.11 CLI app and pytest tests. Use standard library only.",
+                        + (
+                            "\n\nReturn only JSON matching the schema for a complete interactive browser app. index_html must link styles.css and load app.js. Use plain HTML, CSS and browser JavaScript, with no external packages, CDNs or network calls. app.js must expose pure game logic on globalThis.gameLogic and initialize the UI only when document exists. test_js will be saved as test.js and must use Node 22 built-in node:test and assert modules (and node:vm if useful) to test meaningful rules and an edge case. Make the UI polished, responsive and keyboard accessible."
+                            if web
+                            else "\n\nReturn only JSON matching the requested schema for a Python 3.11 CLI app and pytest tests. Use standard library only."
+                        ),
                         agent_context,
-                        output_schema=DEVELOPER_SCHEMA,
+                        output_schema=WEB_DEVELOPER_SCHEMA if web else DEVELOPER_SCHEMA,
                         stop=self.control,
                         on_activity=activity,
                     )
-                    source, tests = parse_source(answer)
-                    sandbox = DockerSandbox(
-                        repo, cancel_check=lambda: self.control() in {"PAUSED", "CANCELLED"}
+                    files = (
+                        parse_web_source(answer)
+                        if web
+                        else dict(zip(("app.py", "test_app.py"), parse_source(answer)))
                     )
-                    for filename, content in (("app.py", source), ("test_app.py", tests)):
+                    sandbox = DockerSandbox(
+                        repo,
+                        image="ai-coding-m3-frontend:local" if web else "ai-coding-m1:local",
+                        cancel_check=lambda: self.control() in {"PAUSED", "CANCELLED"},
+                    )
+                    for filename, content in files.items():
                         activity("sandbox", f"Đang ghi {filename} trong Docker sandbox")
                         result = sandbox.execute(
                             ToolCall(
@@ -216,19 +269,29 @@ class CodexRunRunner:
                         )
                         if not result.ok:
                             raise RuntimeError(f"could not write {filename}: {result.stderr[:500]}")
-                    context[task.agent] = "Created app.py and test_app.py"
+                    context[task.agent] = "Created " + ", ".join(files)
                 elif task.agent == "qa":
+                    web = self.target == "web"
                     sandbox = DockerSandbox(
-                        repo, cancel_check=lambda: self.control() in {"PAUSED", "CANCELLED"}
+                        repo,
+                        image="ai-coding-m3-frontend:local" if web else "ai-coding-m1:local",
+                        cancel_check=lambda: self.control() in {"PAUSED", "CANCELLED"},
                     )
-                    activity("sandbox", "Đang chạy pytest trong Docker sandbox")
+                    activity(
+                        "sandbox",
+                        "Đang chạy Node tests trong Docker sandbox"
+                        if web
+                        else "Đang chạy pytest trong Docker sandbox",
+                    )
                     test = sandbox.execute(
                         ToolCall(
                             f"{task.id}-pytest",
                             "run_command",
                             {
-                                "argv": ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider"],
-                                "timeout_seconds": 90,
+                                "argv": ["node", "--test", "test.js"]
+                                if web
+                                else ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider"],
+                                "timeout_seconds": 60,
                             },
                         )
                     )
@@ -241,14 +304,14 @@ class CodexRunRunner:
                         task.agent,
                         skill,
                         brief
-                        + f"\n\nDocker pytest exit code: {test.exit_code}\nstdout:\n{test.stdout[:5000]}\nstderr:\n{test.stderr[:2000]}\nAssess the result; never claim a pass if exit code is nonzero.",
+                        + f"\n\nDocker {'Node tests' if web else 'pytest'} exit code: {test.exit_code}\nstdout:\n{test.stdout[:5000]}\nstderr:\n{test.stderr[:2000]}\nAssess the result; never claim a pass if exit code is nonzero.",
                         agent_context,
                         stop=self.control,
                         on_activity=activity,
                     )
                     context[task.agent] = answer
                     if not test.ok:
-                        raise RuntimeError("generated app failed Docker pytest; see test report")
+                        raise RuntimeError("generated app failed Docker tests; see test report")
                 else:
                     answer = client.run_role(
                         task.agent,

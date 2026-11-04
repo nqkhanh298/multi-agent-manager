@@ -6,13 +6,13 @@ interface UIState {
   runId: string | null
   taskId: string | null
   filePath: string | null
-  workspaceTab: 'code' | 'diff' | 'tests' | 'logs'
+  workspaceTab: 'code' | 'diff' | 'tests' | 'logs' | 'preview'
   setToken: (token: string) => void
   setProject: (id: string | null) => void
   setRun: (id: string | null) => void
   setTask: (id: string | null) => void
   setFile: (path: string | null) => void
-  setWorkspaceTab: (tab: 'code' | 'diff' | 'tests' | 'logs') => void
+  setWorkspaceTab: (tab: 'code' | 'diff' | 'tests' | 'logs' | 'preview') => void
 }
 
 export const useUI = create<UIState>((set) => ({

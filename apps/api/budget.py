@@ -51,7 +51,7 @@ def run_budget_reason(run: Run, now: datetime | None = None) -> str | None:
     current = now or datetime.now(timezone.utc)
     if (current - _aware(run.created_at)).total_seconds() > run.max_seconds:
         return "run time budget exceeded"
-    if getattr(run, "engine", "demo") != "codex" and run.spent_usd >= run.budget_usd:
+    if not getattr(run, "engine", "demo").startswith("codex") and run.spent_usd >= run.budget_usd:
         return "run USD budget exceeded"
     return None
 

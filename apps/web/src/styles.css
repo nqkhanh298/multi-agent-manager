@@ -201,6 +201,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .recent-event span:nth-child(2) { flex: 1; }
 .recent-event time { color: #7c89a8; white-space: nowrap; }
 .workspace-panel { min-width: 0; height: 355px; display: flex; flex-direction: column; }
+.workspace-panel.workspace-preview { height: 560px; }
+.preview-frame { display: flex; flex: 1; min-height: 0; flex-direction: column; background: #0b1120; }
+.preview-label { padding: 7px 12px; color: #95a8d1; border-bottom: 1px solid #303e60; font-size: 10px; }
+.preview-frame iframe { width: 100%; flex: 1; border: 0; background: white; }
+.preview-placeholder { flex: 1; display: grid; place-items: center; padding: 20px; color: #9dafd4; text-align: center; font-size: 12px; }
 .workspace-tabs { display: flex; align-items: center; gap: 4px; padding: 7px 8px 0; border-bottom: 1px solid #2a3554; }
 .workspace-tabs button { background: transparent; color: #9caacb; border: 0; border-bottom: 2px solid transparent; display: flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 650; padding: 8px 11px 10px; }
 .workspace-tabs button.active { color: #fff; border-bottom-color: #8070ff; }
