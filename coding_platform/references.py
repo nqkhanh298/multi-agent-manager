@@ -13,8 +13,8 @@ from pypdf import PdfReader
 
 MAX_FILES = 3
 MAX_BYTES = 2_000_000
-MAX_CHARS = 8_000
-MAX_TOTAL_CHARS = 20_000
+MAX_CHARS = 100_000
+MAX_TOTAL_CHARS = 180_000
 TEXT_SUFFIXES = {".txt", ".md", ".csv", ".json"}
 SUFFIXES = TEXT_SUFFIXES | {".pdf", ".docx"}
 SOURCE_MAX_FILES = 40

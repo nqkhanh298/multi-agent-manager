@@ -75,6 +75,17 @@ def test_empty_unsupported_and_duplicate_references_are_rejected():
         prepare_references([item, item])
 
 
+def test_long_spec_is_accepted_without_truncation_and_context_is_bounded():
+    spec = ("Requirement: keep the original specification intact.\n" * 300).encode()
+    reference = extract_reference("long-spec.md", encoded("long-spec.md", spec)["data_base64"])
+    assert reference["text"] == spec.decode().strip()
+    assert reference["text"] in reference_brief([reference])
+    with pytest.raises(ValueError, match="100000 characters"):
+        extract_reference("huge-spec.md", encoded("huge-spec.md", b"x" * 100_001)["data_base64"])
+    with pytest.raises(ValueError, match="180000 characters"):
+        prepare_references([encoded("a.md", b"a" * 95_000), encoded("b.md", b"b" * 95_000)])
+
+
 def test_review_requires_quote_from_reference_and_evidence_in_real_source():
     ref = extract_reference("requirements.md", base64.b64encode(b"Use blue buttons").decode())
     answer = (
