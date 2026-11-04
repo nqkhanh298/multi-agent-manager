@@ -3,8 +3,10 @@
 import json
 import subprocess
 
+import pytest
+
 from coding_platform.codex_run import CodexRunRunner, parse_source
-from coding_platform.codex_app_server import CodexAppServer
+from coding_platform.codex_app_server import CodexAppServer, CodexStopped
 from coding_platform.contracts import ToolResult
 
 
@@ -22,7 +24,7 @@ def test_codex_turn_uses_current_read_only_policy(tmp_path, monkeypatch):
     requests = []
     monkeypatch.setattr(client, "start", lambda: None)
 
-    def fake_call(method, params=None, timeout=15):
+    def fake_call(method, params=None, timeout=15, stop=None):
         requests.append((method, params))
         if method == "thread/start":
             return {"thread": {"id": "thread-1"}}
@@ -45,6 +47,44 @@ def test_codex_turn_uses_current_read_only_policy(tmp_path, monkeypatch):
     client.run_role("coordinator", tmp_path / "SKILL.md", "Plan", tmp_path)
     turn = next(params for method, params in requests if method == "turn/start")
     assert turn["sandboxPolicy"] == {"type": "readOnly", "networkAccess": False}
+
+
+def test_codex_request_stops_while_waiting_for_server(monkeypatch):
+    client = CodexAppServer()
+    monkeypatch.setattr(client, "_send", lambda message: None)
+    with pytest.raises(CodexStopped) as exc:
+        client.call("thread/start", {}, timeout=30, stop=lambda: "CANCELLED")
+    assert exc.value.status == "CANCELLED"
+
+
+@pytest.mark.parametrize(
+    ("requested", "task_status"), [("PAUSED", "PENDING"), ("CANCELLED", "CANCELLED")]
+)
+def test_stopping_codex_clears_running_task(tmp_path, monkeypatch, requested, task_status):
+    class FakeCodex:
+        def __init__(self, codex_home):
+            pass
+
+        def account(self):
+            return {"account": {"type": "chatgpt"}}
+
+        def run_role(self, *args, **kwargs):
+            raise CodexStopped(requested)
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr("coding_platform.codex_run.CodexAppServer", FakeCodex)
+    events = []
+    report = CodexRunRunner(
+        tmp_path,
+        lambda kind, payload: events.append((kind, payload)),
+        lambda: None,
+        tmp_path / "codex-account",
+    ).run("Build a clock", "stopped-run")
+    assert report["status"] == requested
+    assert ("task.status", {"task_id": "T1", "status": task_status}) in events
+    assert any(kind == "task.activity" for kind, _ in events)
 
 
 def test_codex_roles_generate_files_and_verify_in_sandbox(tmp_path, monkeypatch):
@@ -76,7 +116,7 @@ def test_codex_roles_generate_files_and_verify_in_sandbox(tmp_path, monkeypatch)
             pass
 
     class FakeSandbox:
-        def __init__(self, workspace):
+        def __init__(self, workspace, cancel_check=None):
             self.workspace = workspace
 
         def execute(self, call):
@@ -124,4 +164,13 @@ def test_codex_roles_generate_files_and_verify_in_sandbox(tmp_path, monkeypatch)
         text=True,
     ).stdout
     assert "+def now()" in source_diff
-    assert len([event for event in events if event[1]["status"] == "COMPLETED"]) == 8
+    assert (
+        len(
+            [
+                event
+                for event in events
+                if event[0] == "task.status" and event[1]["status"] == "COMPLETED"
+            ]
+        )
+        == 8
+    )

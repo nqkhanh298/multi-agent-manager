@@ -9,6 +9,7 @@ import queue
 import shutil
 import subprocess
 import threading
+import time
 from pathlib import Path
 from typing import Any, Callable
 
@@ -109,7 +110,13 @@ class CodexAppServer:
             elif "method" in message:
                 self._notifications.put(message)
 
-    def call(self, method: str, params: dict | None = None, timeout: int = 15) -> dict:
+    def call(
+        self,
+        method: str,
+        params: dict | None = None,
+        timeout: int = 15,
+        stop: Callable[[], str | None] | None = None,
+    ) -> dict:
         with self._id_lock:
             self._next_id += 1
             request_id = self._next_id
@@ -117,10 +124,19 @@ class CodexAppServer:
         self._pending[request_id] = result_queue
         try:
             self._send({"id": request_id, "method": method, "params": params or {}})
-            try:
-                message = result_queue.get(timeout=timeout)
-            except queue.Empty as exc:
-                raise CodexUnavailable(f"Codex did not respond to {method}") from exc
+            deadline = time.monotonic() + timeout
+            while True:
+                requested = stop() if stop else None
+                if requested in {"PAUSED", "CANCELLED"}:
+                    raise CodexStopped(requested)
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise CodexUnavailable(f"Codex did not respond to {method}")
+                try:
+                    message = result_queue.get(timeout=min(0.25, remaining))
+                    break
+                except queue.Empty:
+                    continue
             if "error" in message:
                 error = message["error"]
                 raise CodexUnavailable(str(error.get("message", "Codex request failed")))
@@ -157,12 +173,19 @@ class CodexAppServer:
         timeout: int = 300,
         output_schema: dict | None = None,
         stop: Callable[[], str | None] | None = None,
+        on_activity: Callable[[str, str], None] | None = None,
     ) -> str:
+        def activity(phase: str, detail: str) -> None:
+            if on_activity:
+                on_activity(phase, detail)
+
+        activity("connecting", "Đang mở phiên Codex cho vai trò này")
         self.start()
         thread = self.call(
             "thread/start",
             {"cwd": str(cwd), "approvalPolicy": "on-request", "sandbox": "read-only"},
             timeout=30,
+            stop=stop,
         )
         thread_id = thread["thread"]["id"]
         params: dict[str, Any] = {
@@ -177,17 +200,22 @@ class CodexAppServer:
         }
         if output_schema is not None:
             params["outputSchema"] = output_schema
-        turn = self.call("turn/start", params, timeout=30)
+        turn = self.call("turn/start", params, timeout=30, stop=stop)
         turn_id = turn["turn"]["id"]
         chunks: list[str] = []
         final_message = ""
-        import time
-
+        activity("thinking", "Codex đang phân tích yêu cầu và skill của vai trò")
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             requested = stop() if stop else None
             if requested in {"PAUSED", "CANCELLED"}:
-                self.call("turn/interrupt", {"threadId": thread_id, "turnId": turn_id})
+                activity("stopping", "Đang ngắt lượt xử lý Codex")
+                try:
+                    self.call(
+                        "turn/interrupt", {"threadId": thread_id, "turnId": turn_id}, timeout=3
+                    )
+                except CodexUnavailable:
+                    pass
                 raise CodexStopped(requested)
             event = self.notification(timeout=min(1.0, max(0.01, deadline - time.monotonic())))
             if not event:
@@ -197,6 +225,20 @@ class CodexAppServer:
                 continue
             if event["method"] == "item/agentMessage/delta":
                 chunks.append(params.get("delta", ""))
+                if len(chunks) == 1:
+                    activity("writing", "Codex đang soạn kết quả cho vai trò này")
+            elif event["method"] == "item/started":
+                item = params.get("item") or {}
+                item_type = item.get("type")
+                if item_type == "commandExecution":
+                    command = str(item.get("command") or "lệnh đọc dữ liệu")
+                    activity("tool", f"Đang chạy: {command.replace(chr(10), ' ')[:160]}")
+                elif item_type == "webSearch":
+                    activity("tool", "Đang tra cứu thông tin")
+                elif item_type == "mcpToolCall":
+                    activity("tool", "Đang gọi công cụ hỗ trợ")
+                elif item_type == "reasoning":
+                    activity("thinking", "Codex đang phân tích yêu cầu")
             elif event["method"] == "item/completed":
                 item = params.get("item") or {}
                 if item.get("type") == "agentMessage" and item.get("text"):
@@ -206,8 +248,12 @@ class CodexAppServer:
             ):
                 if params["turn"].get("status") != "completed":
                     raise CodexUnavailable(f"Codex {role} turn {params['turn'].get('status')}")
+                activity("completed", "Codex đã hoàn thành vai trò này")
                 return (final_message or "".join(chunks)).strip()
-        self.call("turn/interrupt", {"threadId": thread_id, "turnId": turn_id})
+        try:
+            self.call("turn/interrupt", {"threadId": thread_id, "turnId": turn_id}, timeout=3)
+        except CodexUnavailable:
+            pass
         raise CodexUnavailable(f"Codex {role} exceeded {timeout} seconds")
 
     def close(self) -> None:

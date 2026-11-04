@@ -111,6 +111,13 @@ def run_payload(run: Run) -> dict:
         "prompt": run.prompt,
         "engine": run.engine,
         "status": run.status,
+        "control_request": (
+            "cancel"
+            if run.status == "RUNNING" and run.cancel_requested
+            else "pause"
+            if run.status == "RUNNING" and run.pause_requested
+            else None
+        ),
         "version": run.version,
         "created_at": run.created_at,
         "updated_at": run.updated_at,
@@ -519,6 +526,20 @@ def cancel_run(
     if run.status in {"CREATED", "PAUSED"}:
         run.cancel_requested = True
         change_status(session, run, "CANCELLED")
+        report_path = data_root() / "m3-runs" / run.id / "report.json"
+        if report_path.is_file():
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            report["status"] = "CANCELLED"
+            report_path.write_text(
+                json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        for task in session.scalars(
+            select(Task).where(Task.run_id == run.id, Task.status == "RUNNING")
+        ):
+            task.status = "CANCELLED"
+            append_event(
+                session, run.id, "task.status", {"task_id": task.task_key, "status": "CANCELLED"}
+            )
     elif run.status == "RUNNING" and not run.cancel_requested:
         run.cancel_requested = True
         append_event(session, run.id, "run.cancel_requested", {})

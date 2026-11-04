@@ -7,7 +7,7 @@ from sqlalchemy.pool import StaticPool
 
 from apps.api import main as api_module
 from apps.api.db import get_session
-from apps.api.models import Base, Project, Task, User
+from apps.api.models import Base, Project, Run, Task, User
 from apps.api.service import token_digest
 from coding_platform.codex_run import CODEX_TASKS
 
@@ -64,13 +64,15 @@ def test_codex_run_requires_account_and_creates_role_tasks(monkeypatch):
         )
         assert response.status_code == 202
         assert response.json()["engine"] == "codex"
+        run_id = response.json()["id"]
+        with sessions.begin() as session:
+            session.get(Run, run_id).status = "RUNNING"
+        paused = client.post(f"/api/runs/{run_id}/pause", headers=headers)
+        assert paused.json()["control_request"] == "pause"
+        cancelled = client.post(f"/api/runs/{run_id}/cancel", headers=headers)
+        assert cancelled.json()["control_request"] == "cancel"
         with sessions() as session:
-            tasks = (
-                session.query(Task)
-                .filter(Task.run_id == response.json()["id"])
-                .order_by(Task.task_key)
-                .all()
-            )
+            tasks = session.query(Task).filter(Task.run_id == run_id).order_by(Task.task_key).all()
             assert [task.agent_role for task in tasks] == [task.agent for task in CODEX_TASKS]
     finally:
         api_module.app.dependency_overrides.clear()

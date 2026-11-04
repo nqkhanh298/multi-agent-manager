@@ -85,11 +85,20 @@ def record_m3_event(run_id: str, event_type: str, payload: dict) -> None:
             execution = session.scalar(
                 select(AgentExecution).where(AgentExecution.task_id == task.id)
             )
-            if execution is None and event_type == "task.status" and payload["status"] == "RUNNING":
+            run_engine = session.scalar(select(Run.engine).where(Run.id == run_id))
+            if (
+                execution is None
+                and run_engine == "codex"
+                and event_type == "task.status"
+                and payload["status"] == "RUNNING"
+            ):
                 execution = AgentExecution(task_id=task.id, model="Codex")
                 session.add(execution)
             if execution is not None and event_type == "task.status":
                 execution.status = payload["status"]
+                if payload["status"] == "RUNNING":
+                    execution.started_at = now_utc()
+                    execution.ended_at = None
                 if payload["status"] in {"COMPLETED", "FAILED", "CANCELLED"}:
                     execution.ended_at = now_utc()
         append_event(session, run_id, event_type, payload)
@@ -234,6 +243,22 @@ def process_run(run_id: str) -> str:
                 return run.status
             run.report_ref = str(data_root() / "m3-runs" / run_id / "report.json")
             status = report["status"]
+            if run.cancel_requested:
+                status = "CANCELLED"
+                report["status"] = status
+                (data_root() / "m3-runs" / run_id / "report.json").write_text(
+                    json.dumps(report, indent=2), encoding="utf-8"
+                )
+                for task in session.scalars(
+                    select(Task).where(Task.run_id == run_id, Task.status == "RUNNING")
+                ):
+                    task.status = "CANCELLED"
+                    append_event(
+                        session,
+                        run_id,
+                        "task.status",
+                        {"task_id": task.task_key, "status": "CANCELLED"},
+                    )
             reason = run_budget_reason(run)
             if reason and not run.cancel_requested:
                 status = "BLOCKED"

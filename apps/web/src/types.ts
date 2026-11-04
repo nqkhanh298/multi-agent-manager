@@ -32,6 +32,7 @@ export interface Run {
   prompt: string
   engine?: 'demo' | 'codex'
   status: RunStatus
+  control_request?: 'pause' | 'cancel' | null
   version: number
   created_at: string
   updated_at: string

@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 
-type MockRun = { id: string; project_id: string; prompt: string; status: string; version: number; created_at: string; updated_at: string; report_ref: null }
+type MockRun = { id: string; project_id: string; prompt: string; status: string; version: number; created_at: string; updated_at: string; report_ref: null; engine?: 'demo' | 'codex'; control_request?: 'pause' | 'cancel' | null }
 
 async function mockPlatform(page: Page) {
   const projects = [{ id: 'p1', name: 'Task Management', description: '', created_at: '2026-11-04T00:00:00Z' }]
@@ -48,11 +48,24 @@ async function mockPlatform(page: Page) {
     if (path.endsWith('/download')) return route.fulfill({ status: 200, headers: { 'Content-Type': 'application/zip', 'Content-Disposition': 'attachment; filename="source.zip"' }, body: 'PK\u0003\u0004' })
     if (method === 'POST' && path.endsWith('/pause')) { run.status = 'PAUSED'; return route.fulfill(json(run)) }
     if (method === 'POST' && path.endsWith('/resume')) { run.status = 'CREATED'; return route.fulfill(json(run)) }
-    if (method === 'POST' && path.endsWith('/cancel')) { run.status = 'CANCELLED'; return route.fulfill(json(run)) }
+    if (method === 'POST' && path.endsWith('/cancel')) { if (run.engine === 'codex') run.control_request = 'cancel'; else run.status = 'CANCELLED'; return route.fulfill(json(run)) }
     if (method === 'POST' && path.includes('/approvals/')) { approvals[0].status = 'APPROVED'; return route.fulfill(json({ id: 'a1', status: 'APPROVED' })) }
     return route.fulfill(json([]))
   })
+  return { runs, tasks, events }
 }
+
+test('shows live agent activity and a pending cancel request', async ({ page }) => {
+  const state = await mockPlatform(page)
+  state.runs[0].engine = 'codex'
+  state.tasks[1].agent_role = 'coordinator'
+  state.tasks[1].title = 'Phân tích yêu cầu'
+  state.events.push({ event_id: 'e2', run_id: 'r1', sequence: 2, type: 'task.activity', payload: { task_id: 'T2', role: 'coordinator', phase: 'thinking', detail: 'Codex đang phân tích yêu cầu' }, timestamp: '2026-11-04T00:00:01Z' })
+  await page.goto('/')
+  await expect(page.getByText('Codex đang phân tích yêu cầu').first()).toBeVisible()
+  await page.getByRole('button', { name: 'Hủy', exact: true }).click()
+  await expect(page.getByText('Đang hủy lượt chạy…')).toBeVisible()
+})
 
 test('shows task graph, progress, code and test output from API data', async ({ page }) => {
   await mockPlatform(page)

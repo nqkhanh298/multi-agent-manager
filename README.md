@@ -95,7 +95,7 @@ npm run test:e2e
 
 The browser suite runs five API-fixture scenarios. Its optional legacy live demo requires `M5_LIVE_TOKEN` and running API, worker, PostgreSQL, Redis, and Docker services. The M4 integration and M6 worker-kill checks are documented in [the development guide](docs/development-guide.md); stop the persistent worker before either check because they control their own queue worker.
 
-The M7 local checks passed **47 Python tests**, **3 frontend unit tests**, a production dashboard build, and **5 fixture-backed browser tests**. A live Coordinator turn passed after ChatGPT sign-in; a complete eight-role Codex run is still unverified. See the [M7 report](docs/m7-report.md). The M6 live benchmark and sandbox checks are recorded in the [M6 report](docs/m6-report.md). GitHub Actions runs lint, unit tests, frontend build, and fixture-backed browser tests on each push and pull request.
+The M7 local checks passed **51 Python tests**, **3 frontend unit tests**, a production dashboard build, and **6 fixture-backed browser tests**. Live Coordinator and cancellation checks passed after ChatGPT sign-in; a complete eight-role Codex run is still unverified. See the [M7 report](docs/m7-report.md). The M6 live benchmark and sandbox checks are recorded in the [M6 report](docs/m6-report.md). GitHub Actions runs lint, unit tests, frontend build, and fixture-backed browser tests on each push and pull request.
 
 ## Security and limitations
 

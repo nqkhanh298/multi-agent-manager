@@ -8,7 +8,7 @@ from typing import Callable
 
 from coding_platform.codex_app_server import CodexAppServer, CodexStopped, CodexUnavailable
 from coding_platform.contracts import ToolCall
-from coding_platform.sandbox import DockerSandbox
+from coding_platform.sandbox import DockerSandbox, SandboxCancelled
 
 
 @dataclass(frozen=True)
@@ -170,6 +170,14 @@ class CodexRunRunner:
                     report["status"] = requested
                     break
                 self.event("task.status", {"task_id": task.id, "status": "RUNNING"})
+
+                def activity(phase: str, detail: str) -> None:
+                    self.event(
+                        "task.activity",
+                        {"task_id": task.id, "role": task.agent, "phase": phase, "detail": detail},
+                    )
+
+                activity("preparing", "Đang chuẩn bị yêu cầu và kết quả từ các vai trò trước")
                 skill = (
                     Path(__file__).resolve().parents[1]
                     / ".agents"
@@ -191,10 +199,14 @@ class CodexRunRunner:
                         agent_context,
                         output_schema=DEVELOPER_SCHEMA,
                         stop=self.control,
+                        on_activity=activity,
                     )
                     source, tests = parse_source(answer)
-                    sandbox = DockerSandbox(repo)
+                    sandbox = DockerSandbox(
+                        repo, cancel_check=lambda: self.control() in {"PAUSED", "CANCELLED"}
+                    )
                     for filename, content in (("app.py", source), ("test_app.py", tests)):
+                        activity("sandbox", f"Đang ghi {filename} trong Docker sandbox")
                         result = sandbox.execute(
                             ToolCall(
                                 f"{task.id}-{filename}",
@@ -206,7 +218,10 @@ class CodexRunRunner:
                             raise RuntimeError(f"could not write {filename}: {result.stderr[:500]}")
                     context[task.agent] = "Created app.py and test_app.py"
                 elif task.agent == "qa":
-                    sandbox = DockerSandbox(repo)
+                    sandbox = DockerSandbox(
+                        repo, cancel_check=lambda: self.control() in {"PAUSED", "CANCELLED"}
+                    )
+                    activity("sandbox", "Đang chạy pytest trong Docker sandbox")
                     test = sandbox.execute(
                         ToolCall(
                             f"{task.id}-pytest",
@@ -229,16 +244,25 @@ class CodexRunRunner:
                         + f"\n\nDocker pytest exit code: {test.exit_code}\nstdout:\n{test.stdout[:5000]}\nstderr:\n{test.stderr[:2000]}\nAssess the result; never claim a pass if exit code is nonzero.",
                         agent_context,
                         stop=self.control,
+                        on_activity=activity,
                     )
                     context[task.agent] = answer
                     if not test.ok:
                         raise RuntimeError("generated app failed Docker pytest; see test report")
                 else:
                     answer = client.run_role(
-                        task.agent, skill, brief, agent_context, stop=self.control
+                        task.agent,
+                        skill,
+                        brief,
+                        agent_context,
+                        stop=self.control,
+                        on_activity=activity,
                     )
                     if not answer:
                         raise RuntimeError(f"Codex {task.agent} returned an empty result")
+                    requested = self.control()
+                    if requested in {"PAUSED", "CANCELLED"}:
+                        raise CodexStopped(requested)
                     context[task.agent] = answer
                     target = repo / (
                         "README.md" if task.agent == "writer" else f"docs/{task.agent}.md"
@@ -262,6 +286,19 @@ class CodexRunRunner:
                 report["status"] = "COMPLETED"
         except CodexStopped as exc:
             report["status"] = exc.status
+            if "task" in locals() and task.id not in completed:
+                status = "PENDING" if exc.status == "PAUSED" else "CANCELLED"
+                self.event("task.status", {"task_id": task.id, "status": status})
+                if status == "CANCELLED":
+                    report["tasks"].append({"task_id": task.id, "status": status})
+        except SandboxCancelled:
+            requested = self.control() or "CANCELLED"
+            report["status"] = requested
+            if "task" in locals() and task.id not in completed:
+                status = "PENDING" if requested == "PAUSED" else "CANCELLED"
+                self.event("task.status", {"task_id": task.id, "status": status})
+                if status == "CANCELLED":
+                    report["tasks"].append({"task_id": task.id, "status": status})
         except (
             CodexUnavailable,
             RuntimeError,

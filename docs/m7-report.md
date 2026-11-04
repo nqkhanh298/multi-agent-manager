@@ -12,9 +12,10 @@
 
 - Codex CLI installed in Ubuntu WSL and app-server `initialize` plus `account/read` returned a valid unauthenticated response. No user credentials were read or copied.
 - PostgreSQL/Redis started, Alembic reached `0004_codex_engine`, and authenticated API `/api/codex/account` returned the expected disconnected state.
-- Python `ruff check`, `ruff format --check`, and `pytest -q` passed: 47 tests.
+- Python `ruff check`, `ruff format --check`, and `pytest -q` passed: 51 tests.
 - After ChatGPT sign-in, a live Coordinator turn returned the expected diagnostic response. This caught and verified the fix for an app-server protocol change: `readOnly.access` is rejected by current Codex, so turns now use the supported read-only sandbox policy.
-- Dashboard production build and three Vitest tests passed. Playwright passed five fixture-backed cases; the optional live legacy case was skipped without `M5_LIVE_TOKEN`.
+- A live Codex turn was interrupted and reported `CANCELLED`. The dashboard now shows the requested stop state until the worker acknowledges it, and the active task leaves `RUNNING` on pause or cancellation. The current activity and recent role steps are shown in the progress panel.
+- Dashboard production build, three Vitest tests and six fixture-backed Playwright cases passed after the control and activity changes.
 
 ## Current limits
 
