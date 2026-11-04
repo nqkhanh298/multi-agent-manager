@@ -56,6 +56,7 @@ const TaskCard = memo(function TaskCard({ data, selected }: NodeProps<TaskNode>)
       : task.model_source?.startsWith('default') ? 'MODEL MẶC ĐỊNH' : 'MODEL'
   const modelName = task.model || (task.model_source === 'default_pending' ? 'Chờ xác định khi chạy'
     : task.model_source === 'default_unknown' ? 'Chưa ghi nhận' : 'Chưa có dữ liệu')
+  const modelProvider = task.model_source && task.model_source !== 'unknown' ? 'CODEX · ' : ''
   return (
     <div className={`flow-card role-${task.agent_role} state-${task.status.toLowerCase()} ${selected ? 'selected' : ''}`}>
       <Handle type="target" position={Position.Left} className="flow-handle" />
@@ -70,7 +71,7 @@ const TaskCard = memo(function TaskCard({ data, selected }: NodeProps<TaskNode>)
       <strong>{roleNames[task.agent_role] || task.agent_role}</strong>
       <small>{task.title}</small>
       <div className={`flow-card-model ${task.model_source === 'runtime' ? 'resolved' : ''}`} title={modelName}>
-        <span><Cpu size={13} /> {modelLabel}</span><b>{modelName}</b>
+        <span><Cpu size={13} /> {modelProvider}{modelLabel}</span><b>{modelName}</b>
       </div>
       {(task.duration_ms != null || (task.input_tokens || 0) + (task.output_tokens || 0) > 0) && <div className="flow-card-metrics">{task.duration_ms != null && <span>{(task.duration_ms / 1000).toFixed(1)}s</span>}{(task.input_tokens || 0) + (task.output_tokens || 0) > 0 && <span>{(task.input_tokens || 0) + (task.output_tokens || 0)} tokens</span>}</div>}
       <Handle type="source" position={Position.Right} className="flow-handle" />

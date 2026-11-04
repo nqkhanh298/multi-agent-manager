@@ -192,7 +192,11 @@ class CodexAppServer:
             stop=stop,
         )
         thread_id = thread["thread"]["id"]
-        resolved_model = thread["thread"].get("model") or model
+        resolved_model = thread["thread"].get("model")
+        if model and resolved_model != model:
+            raise CodexUnavailable(
+                f"Codex returned model {resolved_model or 'unknown'} instead of configured {model}"
+            )
         if isinstance(resolved_model, str) and resolved_model:
             activity("model", resolved_model)
         params: dict[str, Any] = {

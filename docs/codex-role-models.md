@@ -6,6 +6,8 @@ Connect ChatGPT in the dashboard, open **Model Codex theo vai trò**, select mod
 
 Each workflow block shows its model prominently. Before a role starts, the block shows the configured model or says that the default model is still being resolved. When Codex opens the role's thread, the platform records the actual model returned by `thread/start` and replaces the block's planned label with that model. Older runs that did not record the actual default are marked as unrecorded rather than assigned a guessed model.
 
+For an explicitly configured model, the app-server adapter compares the model requested in `thread/start` with the model returned in the thread. If they differ or the response omits the model, the role stops and the run reports the mismatch instead of claiming to use the configured model.
+
 The local platform token authenticates dashboard requests. Codex sign-in is scoped to the local platform user. No external provider API keys are needed or accepted. Previously saved non-Codex role assignments reset to the Codex default when settings are read. Existing Codex model choices are retained.
 
 This remains a local prototype. The preview currently supports generated browser apps and Python terminal programs. Native desktop apps, arbitrary stacks, and live remote deployment are outside the current scope.

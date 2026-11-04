@@ -6,7 +6,7 @@ import os
 import pytest
 
 from coding_platform import codex_roles as providers
-from coding_platform.codex_app_server import CodexAppServer
+from coding_platform.codex_app_server import CodexAppServer, CodexUnavailable
 
 
 def test_assignments_and_private_file(tmp_path):
@@ -62,3 +62,20 @@ def test_codex_thread_receives_selected_model(tmp_path, monkeypatch):
     )
     assert calls[0][1]["model"] == "gpt-6.1-sol"
     assert ("model", "gpt-6.1-sol") in activities
+
+
+@pytest.mark.parametrize("returned_model", ["gpt-6-astra", None])
+def test_codex_rejects_a_different_or_unreported_model(tmp_path, monkeypatch, returned_model):
+    client = CodexAppServer()
+    calls = []
+    monkeypatch.setattr(client, "start", lambda: None)
+
+    def call(method, params=None, timeout=15, stop=None):
+        calls.append((method, params))
+        assert method == "thread/start", "inference must not start with an unverified model"
+        return {"thread": {"id": "thread-1", "model": returned_model}}
+
+    monkeypatch.setattr(client, "call", call)
+    with pytest.raises(CodexUnavailable, match="instead of configured gpt-6.1-sol"):
+        client.run_role("qa", tmp_path / "SKILL.md", "Check", tmp_path, model="gpt-6.1-sol")
+    assert calls[0][1]["model"] == "gpt-6.1-sol"
