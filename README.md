@@ -18,7 +18,7 @@ A local coding platform prototype with task orchestration, isolated execution, a
 | Orchestration | Validated task DAG, Coordinator and QA, checkpointing, repair loop |
 | Parallel work | Git worktrees for independent tasks, ordered merges, integration QA |
 | Platform backend | FastAPI, PostgreSQL, Redis worker, bearer auth, ordered events, WebSocket replay, run controls, source ZIP |
-| Dashboard | React, TypeScript, React Flow, Monaco, file explorer, Git diff, logs, tests, approvals |
+| Dashboard | React, TypeScript, horizontal role-colored React Flow workflow, Monaco, file explorer, Git diff, logs, tests, approvals |
 | Hardening | Budgets, worker heartbeat recovery, fault injection, sandbox checks, browser tests |
 
 ```mermaid
@@ -95,9 +95,9 @@ npm run test
 npm run test:e2e
 ```
 
-The browser suite runs five API-fixture scenarios. Its optional legacy live demo requires `M5_LIVE_TOKEN` and running API, worker, PostgreSQL, Redis, and Docker services. The M4 integration and M6 worker-kill checks are documented in [the development guide](docs/development-guide.md); stop the persistent worker before either check because they control their own queue worker.
+The browser suite runs eight API-fixture scenarios. Its optional legacy live demo requires `M5_LIVE_TOKEN` and running API, worker, PostgreSQL, Redis, and Docker services. The M4 integration and M6 worker-kill checks are documented in [the development guide](docs/development-guide.md); stop the persistent worker before either check because they control their own queue worker.
 
-The M7 local checks passed **52 Python tests**, **3 frontend unit tests**, a production dashboard build, and **7 fixture-backed browser tests**. Live Coordinator and cancellation checks passed after ChatGPT sign-in; a complete eight-role Codex run is still unverified. See the [M7 report](docs/m7-report.md). The M6 live benchmark and sandbox checks are recorded in the [M6 report](docs/m6-report.md). GitHub Actions runs lint, unit tests, frontend build, and fixture-backed browser tests on each push and pull request.
+The M7 local checks passed **52 Python tests**, **3 frontend unit tests**, a production dashboard build, and **8 fixture-backed browser tests**. Live Coordinator and cancellation checks passed after ChatGPT sign-in; a complete eight-role Codex run is still unverified. See the [M7 report](docs/m7-report.md). The M6 live benchmark and sandbox checks are recorded in the [M6 report](docs/m6-report.md). GitHub Actions runs lint, unit tests, frontend build, and fixture-backed browser tests on each push and pull request.
 
 ## Security and limitations
 

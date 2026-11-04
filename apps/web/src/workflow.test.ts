@@ -9,11 +9,14 @@ const tasks: Task[] = [
 ]
 
 describe('workflow graph', () => {
-  it('places independent tasks in one row and QA after both dependencies', () => {
-    const { nodes, edges } = buildFlow(tasks)
-    expect(nodes.find((node) => node.id === 'T1')?.position.y).toBe(0)
-    expect(nodes.find((node) => node.id === 'T2')?.position.y).toBe(0)
-    expect(nodes.find((node) => node.id === 'T3')?.position.y).toBe(190)
+  it('places independent tasks in one column and QA to their right', () => {
+    const { nodes, edges, width } = buildFlow(tasks)
+    expect(nodes.find((node) => node.id === 'T1')?.position.x).toBe(60)
+    expect(nodes.find((node) => node.id === 'T2')?.position.x).toBe(60)
+    expect(nodes.find((node) => node.id === 'T1')?.position.y).not.toBe(nodes.find((node) => node.id === 'T2')?.position.y)
+    expect(nodes.find((node) => node.id === 'T3')?.position.x).toBeGreaterThan(60)
+    expect(width).toBeGreaterThan(600)
     expect(edges.map((edge) => `${edge.source}->${edge.target}`)).toEqual(['T1->T3', 'T2->T3'])
+    expect(edges.every((edge) => edge.type === 'smoothstep')).toBe(true)
   })
 })

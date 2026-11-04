@@ -105,6 +105,29 @@ test('shows task graph, progress, code and test output from API data', async ({ 
   await expect(page.locator('.event-log .event-type')).toContainText('run.created')
 })
 
+test('keeps eight specialist stages readable in a horizontal workflow', async ({ page }) => {
+  const state = await mockPlatform(page)
+  const roles = ['coordinator', 'researcher', 'architect', 'designer', 'developer', 'qa', 'writer', 'release']
+  state.tasks.splice(0, state.tasks.length, ...roles.map((role, index) => ({
+    id: `T${index + 1}`, title: `${role} task`, agent_role: role,
+    status: index < 3 ? 'COMPLETED' : index === 3 ? 'RUNNING' : 'PENDING',
+    depends_on: index ? [`T${index}`] : [], workspace_ref: null,
+  })))
+  await page.goto('/')
+  await expect(page.locator('.react-flow__node')).toHaveCount(8)
+  await expect(page.locator('.flow-card.role-designer .flow-card-meta')).toContainText('THIẾT KẾ')
+  await expect(page.locator('.flow-card.role-qa .flow-card-meta')).toContainText('KIỂM THỬ')
+  await expect(page.locator('.flow-card.role-release .flow-card-meta')).toContainText('BÀN GIAO')
+  const viewport = page.locator('.workflow-canvas')
+  expect(await viewport.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true)
+  await viewport.evaluate((element) => { element.scrollLeft = 0 })
+  await page.getByRole('button', { name: 'Xem bước tiếp' }).click()
+  await expect.poll(() => viewport.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(page.getByRole('button', { name: 'Xem bước tiếp' })).toBeVisible()
+  expect(await viewport.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true)
+})
+
 test('creates a run and controls its lifecycle', async ({ page }) => {
   await mockPlatform(page)
   await page.goto('/')

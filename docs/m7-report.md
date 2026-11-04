@@ -16,7 +16,8 @@
 - After ChatGPT sign-in, a live Coordinator turn returned the expected diagnostic response. This caught and verified the fix for an app-server protocol change: `readOnly.access` is rejected by current Codex, so turns now use the supported read-only sandbox policy.
 - A live Codex turn was interrupted and reported `CANCELLED`. The dashboard now shows the requested stop state until the worker acknowledges it, and the active task leaves `RUNNING` on pause or cancellation. The current activity and recent role steps are shown in the progress panel.
 - Finished projects can now be deleted through a confirmation dialog. The API checks ownership, rejects active runs, removes dependent records, then removes generated run and artifact directories. A cleanup warning is returned if local file deletion fails.
-- Dashboard production build, three Vitest tests and seven fixture-backed Playwright cases passed after the control and activity changes.
+- The workflow now lays out dependencies from left to right, keeps cards readable with horizontal scrolling, follows the active task, and uses role colors, stage labels, arrowed edges, and reduced-motion-aware animations.
+- Dashboard production build, three Vitest tests and eight fixture-backed Playwright cases passed after the control and activity changes.
 
 ## Current limits
 

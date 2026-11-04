@@ -114,35 +114,53 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .panel-heading h2 { display: flex; align-items: center; gap: 9px; margin: 4px 0 0; font-size: 15px; letter-spacing: -.015em; }
 .panel-heading h2 svg { color: #a49cff; }
 .panel-tag { padding: 6px 9px; background: #222b4c; border: 1px solid #3a4670; border-radius: 6px; font-size: 10px; color: #aebbe2; }
-.workflow-canvas { width: 100%; height: 422px; background: radial-gradient(circle at 50% 40%, #1b2542 0, #0b1326 71%); }
+.workflow-shell { min-width: 0; }
+.workflow-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 7px 13px; min-height: 46px; padding: 8px 15px; border-bottom: 1px solid #263452; background: #121d37; }
+.workflow-legend > span { display: inline-flex; align-items: center; gap: 6px; color: #aebddd; font-size: 10px; white-space: nowrap; }
+.workflow-legend > span::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--legend-color); box-shadow: 0 0 8px var(--legend-color); }
+.legend-discovery { --legend-color: #46d5dc; }.legend-design { --legend-color: #d18cff; }.legend-build { --legend-color: #69a7ff; }.legend-verify { --legend-color: #f1bd61; }.legend-deliver { --legend-color: #73dca0; }
+.workflow-navigation { display: flex; align-items: center; gap: 5px; margin-left: auto; }
+.workflow-navigation small { margin-right: 5px; color: #8498bf; font-size: 10px; white-space: nowrap; }
+.workflow-navigation button { width: 25px; height: 25px; display: grid; place-items: center; border: 1px solid #455681; border-radius: 6px; background: #202d4e; color: #d7e4ff; cursor: pointer; }
+.workflow-navigation button:hover { background: #334774; }
+.workflow-canvas { width: 100%; height: 422px; overflow: auto; scrollbar-color: #6076ae #111b31; background: radial-gradient(circle at 40% 50%, #1b2542 0, #0b1326 72%); }
+.workflow-stage { width: 100%; }
 .workflow-empty { height: 422px; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 10px; color: #8a9abe; background: radial-gradient(circle at center, #1a2543, #0d1429 68%); text-align: center; padding: 20px; }
 .workflow-empty strong { color: #dee5fc; font-size: 14px; }
 .workflow-empty span { font-size: 12px; }
 .react-flow__controls { background: #192340; box-shadow: none; border: 1px solid #3f5079; }
 .react-flow__controls-button { background: #192340; color: #e3eaff; border-color: #364363; fill: #e3eaff; }
 .react-flow__controls-button:hover { background: #2a3559; }
-.flow-card { width: 270px; min-height: 114px; border: 1px solid #597da4; border-radius: 11px; padding: 12px 14px; color: #eef3ff; text-align: left; background: linear-gradient(135deg, #143255f0, #122544f0); box-shadow: 0 5px 23px #0006, inset 0 0 0 1px #ffffff10; }
-.flow-card.role-frontend_dev { border-color: #559afc; background: linear-gradient(135deg, #112a53f0, #16265af0); }
-.flow-card.role-qa { border-color: #edb34f; background: linear-gradient(135deg, #50351ef0, #2c2337f0); }
-.flow-card.state-completed { border-color: #40d795; }
+.flow-card { --role-accent: #8e83ff; position: relative; overflow: hidden; width: 244px; min-height: 146px; border: 1px solid color-mix(in srgb, var(--role-accent) 70%, #445270); border-radius: 12px; padding: 13px 14px; color: #eef3ff; text-align: left; background: linear-gradient(135deg, color-mix(in srgb, var(--role-accent) 18%, #17233d), #111a31 72%); box-shadow: 0 8px 25px #0007, inset 0 0 0 1px #ffffff0d; transition: transform .2s, box-shadow .2s, border-color .2s; }
+.flow-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--role-accent), transparent); }
+.flow-card:hover { transform: translateY(-3px); box-shadow: 0 12px 30px #0009, 0 0 18px color-mix(in srgb, var(--role-accent) 25%, transparent); }
+.flow-card.role-researcher { --role-accent: #46d5dc; }.flow-card.role-architect { --role-accent: #b789ff; }.flow-card.role-designer { --role-accent: #f281c6; }
+.flow-card.role-developer, .flow-card.role-backend_dev { --role-accent: #5f9eff; }.flow-card.role-frontend_dev { --role-accent: #6eb9ff; }
+.flow-card.role-qa { --role-accent: #f1bd61; }.flow-card.role-writer { --role-accent: #6bd7a8; }.flow-card.role-release { --role-accent: #8adf79; }
+.flow-card.state-completed .flow-card-state { color: #7ce8ae; background: #174434; }
 .flow-card.state-failed, .flow-card.state-blocked, .flow-card.state-cancelled { border-color: #ed6b79; }
-.flow-card.state-running { box-shadow: 0 0 22px #4c85ff54, inset 0 0 0 1px #ffffff20; }
+.flow-card.state-running { animation: rolePulse 2.2s ease-in-out infinite; border-width: 2px; }
+.flow-card.state-running::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(110deg, transparent 35%, #ffffff0b 50%, transparent 65%); transform: translateX(-120%); animation: roleShimmer 3s ease-in-out infinite; }
 .flow-card.selected { outline: 2px solid #b2a1ff; outline-offset: 3px; }
-.flow-card-top { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.agent-icon { width: 29px; height: 29px; border-radius: 8px; display: grid; place-items: center; background: #436abb; color: white; }
-.role-frontend_dev .agent-icon { background: #376dd6; }
-.role-qa .agent-icon { background: #bd8735; }
+.flow-card-top { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.agent-icon { width: 34px; height: 34px; flex: none; border-radius: 9px; display: grid; place-items: center; background: color-mix(in srgb, var(--role-accent) 40%, #26375e); color: #fff; box-shadow: inset 0 1px 0 #ffffff38; }
+.flow-card-meta { display: grid; gap: 2px; min-width: 0; }
+.flow-card-meta b { color: var(--role-accent); font-size: 9px; letter-spacing: .09em; white-space: nowrap; }
 .flow-task-id { color: #aebfe4; font-size: 10px; font-family: ui-monospace, Consolas, monospace; }
-.flow-card-state { margin-left: auto; color: #55df9b; display: flex; align-items: center; }
-.state-running .flow-card-state { color: #77b6ff; }
-.state-failed .flow-card-state, .state-cancelled .flow-card-state { color: #ff8390; }
+.flow-card-state { margin-left: auto; display: flex; align-items: center; gap: 4px; padding: 4px 6px; border-radius: 6px; color: #abb8d7; background: #273450; font-size: 9px; white-space: nowrap; }
+.state-running .flow-card-state { color: #c1d8ff; background: #284672; }
+.state-failed .flow-card-state, .state-cancelled .flow-card-state, .state-blocked .flow-card-state { color: #ffadb7; background: #542d3b; }
 .state-dot { width: 9px; height: 9px; border: 2px solid #8090b4; border-radius: 50%; }
-.flow-card strong { display: block; font-size: 14px; margin-bottom: 3px; }
-.flow-card small { display: block; color: #b5c5e3; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.flow-card strong { display: block; font-size: 15px; margin-bottom: 5px; letter-spacing: -.01em; }
+.flow-card small { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; color: #b5c5e3; font-size: 11px; line-height: 1.35; overflow: hidden; }
 .flow-card-metrics { display: flex; gap: 9px; margin-top: 8px; color: #99b4e8; font-size: 10px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .flow-handle { opacity: 0; }
+.flow-edge-active path { filter: drop-shadow(0 0 5px #91adff); }
 .spin { animation: spin 1.4s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+@keyframes rolePulse { 50% { box-shadow: 0 0 25px color-mix(in srgb, var(--role-accent) 45%, transparent), inset 0 0 0 1px #ffffff20; } }
+@keyframes roleShimmer { 55%, 100% { transform: translateX(120%); } }
+@media (prefers-reduced-motion: reduce) { .flow-card.state-running, .flow-card.state-running::after, .spin, .react-flow__edge.animated path { animation: none; } .flow-card { transition: none; } }
 .progress-panel { min-width: 0; display: flex; flex-direction: column; }
 .progress-summary { padding: 15px 17px 11px; }
 .progress-summary > div:first-child { display: flex; justify-content: space-between; font-size: 11px; color: #c5ccea; }
@@ -233,7 +251,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .engine-choice { display: flex; flex-wrap: wrap; gap: 14px; margin: 7px 0 12px; }
 .engine-choice label { display: inline-flex; align-items: center; gap: 6px; color: #b8c4e1; font-size: 11px; cursor: pointer; }
 .engine-choice input { accent-color: #7764f3; }
-.flow-card.role-coordinator, .flow-card.role-researcher, .flow-card.role-architect, .flow-card.role-designer, .flow-card.role-developer, .flow-card.role-writer, .flow-card.role-release { border-color: #7567cb; background: linear-gradient(135deg, #25204cf0, #172543f0); }
 .banner-error button { background: transparent; color: inherit; border: 0; display: inline-flex; }
 .modal-backdrop { position: fixed; z-index: 100; inset: 0; background: #030615bf; display: grid; place-items: center; padding: 20px; }
 .approval-modal { width: min(460px, 100%); background: #151e35; border: 1px solid #4a5680; border-radius: 13px; box-shadow: 0 20px 80px #0009; padding: 18px; }
