@@ -108,7 +108,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .run-toolbar-actions button, .approval-item button { border: 1px solid #3b4a71; border-radius: 7px; background: #1a2440; color: #e6eafa; padding: 8px 10px; font-size: 11px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .run-toolbar-actions button:hover:not(:disabled), .approval-item button:hover:not(:disabled) { background: #293559; }
 .run-toolbar-actions .danger-button { border-color: #7d4355; color: #ffb2bd; }
-.dashboard-grid { display: grid; grid-template-columns: minmax(0, 1fr) 290px; gap: 13px; margin-bottom: 13px; align-items: stretch; }
+.dashboard-grid { display: grid; grid-template-columns: minmax(0, 1fr) 290px; gap: 13px; margin-bottom: 13px; align-items: start; }
 .workflow-panel { min-width: 0; }
 .panel-heading { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px 12px; border-bottom: 1px solid #25304c; }
 .panel-heading h2 { display: flex; align-items: center; gap: 9px; margin: 4px 0 0; font-size: 15px; letter-spacing: -.015em; }
