@@ -11,7 +11,7 @@ from sqlalchemy.pool import StaticPool
 from apps.api import main as api_module
 from apps.api.db import get_session
 from apps.api.models import AgentExecution, Base, Project, Run, Task, User
-from apps.api.service import token_digest
+from apps.api.service import append_event, token_digest
 from coding_platform.codex_run import CODEX_TASKS
 from coding_platform.contracts import ToolResult
 from coding_platform.codex_roles import default_assignments
@@ -157,6 +157,36 @@ def test_codex_run_requires_account_and_creates_role_tasks(monkeypatch, tmp_path
             next(task for task in actual if task["agent_role"] == "coordinator")["model_source"]
             == "runtime"
         )
+        with sessions.begin() as session:
+            append_event(
+                session,
+                auto_id,
+                "task.activity",
+                {
+                    "task_id": "T1",
+                    "phase": "summary",
+                    "detail": "Read the supplied requirements",
+                },
+            )
+            append_event(
+                session,
+                response.json()["id"],
+                "task.activity",
+                {
+                    "task_id": "T1",
+                    "phase": "summary",
+                    "detail": "Other run",
+                },
+            )
+        activity = client.get(f"/api/runs/{auto_id}/tasks/T1/activity", headers=headers)
+        assert activity.status_code == 200
+        assert [event["payload"]["detail"] for event in activity.json()] == [
+            "Read the supplied requirements"
+        ]
+        assert (
+            client.get(f"/api/runs/{auto_id}/tasks/T2/activity", headers=headers).status_code == 404
+        )
+        assert client.get(f"/api/runs/{auto_id}/tasks/T1/activity").status_code == 401
         attached = client.get(f"/api/runs/{auto_id}/references", headers=headers)
         assert attached.status_code == 200
         assert attached.json()[0]["name"] == "requirements.md"

@@ -24,6 +24,69 @@ class CodexStopped(RuntimeError):
         super().__init__(f"Codex run {status.lower()}")
 
 
+def tool_activity(item: dict, completed: bool = False) -> str | None:
+    """Describe observable Codex work without exposing command output or tool results."""
+    kind = item.get("type")
+    if kind == "commandExecution":
+        command = str(item.get("command") or "").replace("\n", " ").strip()[:300]
+        directory = str(item.get("cwd") or "").strip()[:180]
+        prefix = "Đã chạy lệnh" if completed else "Đang chạy lệnh"
+        outcome = (
+            f" · exit {item['exitCode']}" if completed and item.get("exitCode") is not None else ""
+        )
+        return f"{prefix}{f' tại {directory}' if directory else ''}: {command or '(không có tên lệnh)'}{outcome}"
+    if kind == "webSearch":
+        action = item.get("action") or {}
+        action_type = action.get("type")
+        if action_type == "openPage":
+            return (
+                f"{'Đã mở' if completed else 'Đang mở'} trang: {str(action.get('url') or '')[:400]}"
+            )
+        if action_type == "findInPage":
+            return f"{'Đã tìm' if completed else 'Đang tìm'} trong trang {str(action.get('url') or '')[:300]}: {str(action.get('pattern') or '')[:180]}"
+        queries = action.get("queries") or [action.get("query") or item.get("query")]
+        query = ", ".join(str(value) for value in queries if value)[:400]
+        return f"{'Đã tìm' if completed else 'Đang tìm'} trên web: {query or '(không có truy vấn)'}"
+    if kind == "mcpToolCall":
+        arguments = item.get("arguments") or {}
+        if isinstance(arguments, str):
+            try:
+                arguments = json.loads(arguments)
+            except json.JSONDecodeError:
+                arguments = {}
+        source = ""
+        if isinstance(arguments, dict):
+            for key in ("query", "url", "uri", "path", "file_id", "document_id"):
+                if arguments.get(key):
+                    source = f" · {key}: {str(arguments[key])[:250]}"
+                    break
+        label = "/".join(str(item.get(key) or "") for key in ("server", "tool")).strip("/")
+        return f"{'Đã dùng' if completed else 'Đang dùng'} công cụ {label or 'MCP'}{source}"
+    if kind == "imageView":
+        return f"{'Đã xem' if completed else 'Đang xem'} ảnh: {str(item.get('path') or '')[:350]}"
+    return None
+
+
+def readable_summaries(value: Any) -> list[str]:
+    """Use published reasoning summaries only; never return raw reasoning content."""
+    if isinstance(value, str):
+        return [value.strip()] if value.strip() else []
+    if isinstance(value, list):
+        parts = []
+        for entry in value:
+            text = (
+                entry
+                if isinstance(entry, str)
+                else entry.get("text")
+                if isinstance(entry, dict)
+                else None
+            )
+            if isinstance(text, str) and text.strip():
+                parts.append(text.strip())
+        return parts
+    return []
+
+
 def codex_binary() -> str:
     configured = os.getenv("CODEX_BIN")
     found = configured or shutil.which("codex")
@@ -215,6 +278,22 @@ class CodexAppServer:
         turn_id = turn["turn"]["id"]
         chunks: list[str] = []
         final_message = ""
+        summary_deltas: dict[str, dict[int, str]] = {}
+        summary_emitted: dict[str, dict[int, int]] = {}
+
+        def publish_summary(item_id: str, index: int, *, final: bool = False) -> None:
+            text = summary_deltas.get(item_id, {}).get(index, "")
+            sent = summary_emitted.setdefault(item_id, {}).get(index, 0)
+            if not final and len(text) - sent < 180:
+                return
+            end = len(text) if final else text.rfind(" ", sent + 100)
+            if end <= sent:
+                return
+            section = text[sent:end].strip()
+            if section:
+                activity("summary", section[:1500])
+            summary_emitted[item_id][index] = end
+
         activity("thinking", "Codex đang phân tích yêu cầu và skill của vai trò")
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -238,22 +317,47 @@ class CodexAppServer:
                 chunks.append(params.get("delta", ""))
                 if len(chunks) == 1:
                     activity("writing", "Codex đang soạn kết quả cho vai trò này")
+            elif event["method"] == "item/reasoning/summaryTextDelta":
+                item_id = str(params.get("itemId") or "")
+                index = params.get("summaryIndex", 0)
+                if item_id and isinstance(index, int):
+                    sections = summary_deltas.setdefault(item_id, {})
+                    current = sections.get(index, "")
+                    sections[index] = (current + str(params.get("delta") or ""))[:1500]
+                    publish_summary(item_id, index)
+            elif event["method"] == "item/reasoning/summaryPartAdded":
+                item_id = str(params.get("itemId") or "")
+                for index in sorted(summary_deltas.get(item_id, {})):
+                    publish_summary(item_id, index, final=True)
             elif event["method"] == "item/started":
                 item = params.get("item") or {}
-                item_type = item.get("type")
-                if item_type == "commandExecution":
-                    command = str(item.get("command") or "lệnh đọc dữ liệu")
-                    activity("tool", f"Đang chạy: {command.replace(chr(10), ' ')[:160]}")
-                elif item_type == "webSearch":
-                    activity("tool", "Đang tra cứu thông tin")
-                elif item_type == "mcpToolCall":
-                    activity("tool", "Đang gọi công cụ hỗ trợ")
-                elif item_type == "reasoning":
-                    activity("thinking", "Codex đang phân tích yêu cầu")
+                detail = tool_activity(item)
+                if detail:
+                    activity("tool", detail)
             elif event["method"] == "item/completed":
                 item = params.get("item") or {}
                 if item.get("type") == "agentMessage" and item.get("text"):
                     final_message = item["text"]
+                elif item.get("type") == "reasoning":
+                    item_id = str(item.get("id"))
+                    sections = readable_summaries(item.get("summary"))
+                    if not sections:
+                        sections = [
+                            text
+                            for _, text in sorted(summary_deltas.get(item_id, {}).items())
+                        ]
+                    for index, section in enumerate(sections[:8]):
+                        streamed = summary_deltas.get(item_id, {}).get(index, "")
+                        sent = summary_emitted.get(item_id, {}).get(index, 0)
+                        remaining = section[sent:] if section.startswith(streamed[:sent]) else section
+                        if remaining.strip():
+                            activity("summary", remaining.strip()[:1500])
+                    summary_deltas.pop(item_id, None)
+                    summary_emitted.pop(item_id, None)
+                else:
+                    detail = tool_activity(item, completed=True)
+                    if detail:
+                        activity("tool_result", detail)
             elif (
                 event["method"] == "turn/completed" and params.get("turn", {}).get("id") == turn_id
             ):

@@ -469,6 +469,31 @@ def list_events(
     return [event_json(event) for event in events]
 
 
+@app.get("/api/runs/{run_id}/tasks/{task_key}/activity")
+def task_activity(
+    run_id: str,
+    task_key: str,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+) -> list:
+    if owned_run(session, run_id, user) is None:
+        raise HTTPException(404, "run not found")
+    task = session.scalar(select(Task).where(Task.run_id == run_id, Task.task_key == task_key))
+    if task is None:
+        raise HTTPException(404, "task not found")
+    events = session.scalars(
+        select(Event)
+        .where(
+            Event.run_id == run_id,
+            Event.type == "task.activity",
+            Event.payload["task_id"].as_string() == task_key,
+        )
+        .order_by(Event.seq.desc())
+        .limit(1000)
+    ).all()
+    return [event_json(event) for event in reversed(events)]
+
+
 @app.get("/api/runs/{run_id}/tool-calls")
 def list_tool_calls(
     run_id: str, session: Session = Depends(get_session), user: User = Depends(current_user)

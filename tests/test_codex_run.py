@@ -245,6 +245,133 @@ def test_codex_turn_uses_current_read_only_policy(tmp_path, monkeypatch):
     assert turn["sandboxPolicy"] == {"type": "readOnly", "networkAccess": False}
 
 
+def test_codex_activity_reports_real_sources_and_readable_summaries(tmp_path, monkeypatch):
+    client = CodexAppServer()
+    monkeypatch.setattr(client, "start", lambda: None)
+
+    def fake_call(method, params=None, timeout=15, stop=None):
+        if method == "thread/start":
+            return {"thread": {"id": "thread-1", "model": "test-model"}}
+        if method == "turn/start":
+            return {"turn": {"id": "turn-1"}}
+        raise AssertionError(method)
+
+    notifications = iter(
+        [
+            {
+                "method": "item/started",
+                "params": {
+                    "threadId": "thread-1",
+                    "item": {
+                        "id": "cmd-1",
+                        "type": "commandExecution",
+                        "command": "rg -n budget docs",
+                        "cwd": "/workspace",
+                    },
+                },
+            },
+            {
+                "method": "item/completed",
+                "params": {
+                    "threadId": "thread-1",
+                    "item": {
+                        "id": "cmd-1",
+                        "type": "commandExecution",
+                        "command": "rg -n budget docs",
+                        "cwd": "/workspace",
+                        "exitCode": 0,
+                        "aggregatedOutput": "SECRET_OUTPUT",
+                    },
+                },
+            },
+            {
+                "method": "item/started",
+                "params": {
+                    "threadId": "thread-1",
+                    "item": {
+                        "id": "web-1",
+                        "type": "webSearch",
+                        "action": {"type": "openPage", "url": "https://example.org/report"},
+                    },
+                },
+            },
+            {
+                "method": "item/reasoning/summaryTextDelta",
+                "params": {
+                    "threadId": "thread-1",
+                    "itemId": "reason-1",
+                    "summaryIndex": 0,
+                    "delta": "Compared the attached document with the request. " * 5,
+                },
+            },
+            {
+                "method": "item/reasoning/textDelta",
+                "params": {
+                    "threadId": "thread-1",
+                    "itemId": "reason-1",
+                    "delta": "PRIVATE_REASONING",
+                },
+            },
+            {
+                "method": "item/completed",
+                "params": {
+                    "threadId": "thread-1",
+                    "item": {
+                        "id": "reason-1",
+                        "type": "reasoning",
+                        "summary": [],
+                        "content": ["PRIVATE_REASONING"],
+                    },
+                },
+            },
+            {
+                "method": "item/completed",
+                "params": {
+                    "threadId": "thread-1",
+                    "item": {
+                        "id": "answer-1",
+                        "type": "agentMessage",
+                        "text": "Done",
+                    },
+                },
+            },
+            {
+                "method": "turn/completed",
+                "params": {
+                    "threadId": "thread-1",
+                    "turn": {"id": "turn-1", "status": "completed"},
+                },
+            },
+        ]
+    )
+    monkeypatch.setattr(client, "call", fake_call)
+    activity = []
+
+    def next_notification(timeout=1.0):
+        event = next(notifications)
+        if event["method"] == "item/completed" and event["params"]["item"]["type"] == "reasoning":
+            assert any(phase == "summary" for phase, _ in activity)
+        return event
+
+    monkeypatch.setattr(client, "notification", next_notification)
+    assert (
+        client.run_role(
+            "researcher",
+            tmp_path / "SKILL.md",
+            "Research",
+            tmp_path,
+            on_activity=lambda phase, detail: activity.append((phase, detail)),
+        )
+        == "Done"
+    )
+    details = "\n".join(detail for _, detail in activity)
+    assert "rg -n budget docs" in details
+    assert "https://example.org/report" in details
+    assert "Compared the attached document with the request." in details
+    assert "SECRET_OUTPUT" not in details
+    assert "PRIVATE_REASONING" not in details
+
+
 def test_codex_request_stops_while_waiting_for_server(monkeypatch):
     client = CodexAppServer()
     monkeypatch.setattr(client, "_send", lambda message: None)

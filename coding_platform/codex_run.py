@@ -346,6 +346,18 @@ class CodexRunRunner:
                             "ids": [item["id"] for item in references],
                         },
                     )
+                    if activity:
+                        activity(
+                            "source",
+                            "Đã nạp tài liệu tham chiếu: "
+                            + ", ".join(str(item["name"]) for item in references),
+                        )
+                elif role == "researcher" and activity:
+                    activity(
+                        "source", "Nguồn hiện có: yêu cầu người dùng; không có tài liệu đính kèm"
+                    )
+                if role == "researcher" and activity:
+                    activity("source", "Phiên Codex này không bật truy cập web")
                 return client.run_role(
                     role,
                     skill,
@@ -402,6 +414,7 @@ class CodexRunRunner:
                     activity=planning_activity,
                 )
                 target, selected_tasks, summary = parse_agent_plan(selected)
+                planning_activity("summary", summary)
                 report["target"] = target
                 report["plan"] = {
                     "target": target,
@@ -421,6 +434,7 @@ class CodexRunRunner:
                 context["coordinator"] = summary
                 (repo / "docs").mkdir(exist_ok=True)
                 (repo / "docs" / "coordinator.md").write_text(summary, encoding="utf-8")
+                planning_activity("output", "Đã ghi kế hoạch vào docs/coordinator.md")
                 report["tasks"].append(
                     {
                         "task_id": "T1",
@@ -489,6 +503,7 @@ class CodexRunRunner:
                     )
                     report_text = validate_report(answer)
                     (repo / "REPORT.md").write_text(report_text, encoding="utf-8")
+                    activity("output", "Đã tạo REPORT.md từ ghi chú nghiên cứu")
                     context["writer"] = report_text
                 elif selected_target == "research_report" and task.agent == "qa":
                     document = (repo / "REPORT.md").read_text(encoding="utf-8")
@@ -665,6 +680,7 @@ class CodexRunRunner:
                     )
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_text(answer[:100_000], encoding="utf-8")
+                    activity("output", f"Đã ghi kết quả vào {target.relative_to(repo).as_posix()}")
                 report["tasks"].append(
                     {
                         "task_id": task.id,

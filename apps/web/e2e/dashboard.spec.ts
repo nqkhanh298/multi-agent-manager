@@ -49,6 +49,10 @@ async function mockPlatform(page: Page, connected = true) {
     const run = runs.find((item) => item.id === id) || runs[0]
     if (/^\/api\/runs\/[^/]+$/.test(path)) return route.fulfill(json(run))
     if (path.endsWith('/references')) return route.fulfill(json([]))
+    if (/^\/api\/runs\/[^/]+\/tasks\/[^/]+\/activity$/.test(path)) {
+      const taskId = path.split('/')[5]
+      return route.fulfill(json(events.filter((event) => event.type === 'task.activity' && event.payload.task_id === taskId)))
+    }
     if (path.endsWith('/tasks')) return route.fulfill(json(tasks))
     if (path.endsWith('/events')) return route.fulfill(json(events))
     if (path.endsWith('/files')) return route.fulfill(json([{ path: 'backend.py', size: 80 }, { path: 'App.jsx', size: 100 }] ))
@@ -194,6 +198,25 @@ test('keeps the graph aligned when Coordinator adds agents during a run', async 
   expect(first!.x - visible!.x).toBeLessThan(100)
   expect(first!.x - visible!.x).toBeGreaterThan(-100)
   await expect(page.locator('.react-flow__node[data-id="T2"]')).toBeInViewport()
+})
+
+test('replays the activity of each workflow block when selected', async ({ page }) => {
+  const state = await mockPlatform(page)
+  state.runs[0].engine = 'codex_auto'
+  state.tasks.splice(0, state.tasks.length,
+    { id: 'T1', title: 'Plan', agent_role: 'coordinator', status: 'COMPLETED', depends_on: [], workspace_ref: null },
+    { id: 'T2', title: 'Research', agent_role: 'researcher', status: 'RUNNING', depends_on: ['T1'], workspace_ref: null },
+  )
+  state.events.push(
+    { event_id: 'e2', run_id: 'r1', sequence: 2, type: 'task.activity', payload: { task_id: 'T1', role: 'coordinator', phase: 'summary', detail: 'Selected Researcher for the report' }, timestamp: '2026-11-04T00:00:01Z' },
+    { event_id: 'e3', run_id: 'r1', sequence: 3, type: 'task.activity', payload: { task_id: 'T2', role: 'researcher', phase: 'tool', detail: 'Reading docs/requirements.md' }, timestamp: '2026-11-04T00:00:02Z' },
+  )
+  await page.goto('/')
+  await page.locator('.react-flow__node[data-id="T2"]').click()
+  await expect(page.getByLabel('Lịch sử hoạt động của researcher')).toContainText('Reading docs/requirements.md')
+  await expect(page.getByLabel('Lịch sử hoạt động của researcher')).not.toContainText('Selected Researcher for the report')
+  await page.locator('.react-flow__node[data-id="T1"]').click()
+  await expect(page.getByLabel('Lịch sử hoạt động của coordinator')).toContainText('Selected Researcher for the report')
 })
 
 test('assigns a specific model to a role and saves the choice', async ({ page }) => {

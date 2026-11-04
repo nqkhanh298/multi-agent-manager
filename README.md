@@ -18,7 +18,7 @@ A local Codex coding platform prototype with task orchestration, isolated execut
 | Orchestration | Validated task DAG, Coordinator and QA, checkpointing, repair loop |
 | Parallel work | Git worktrees for independent tasks, ordered merges, integration QA |
 | Platform backend | FastAPI, PostgreSQL, Redis worker, bearer auth, ordered events, WebSocket replay, run controls, source ZIP |
-| Dashboard | React, TypeScript, horizontal role-colored React Flow workflow, browser, terminal, or report Preview, reference attachments, Monaco, file explorer, Git diff, logs, tests, approvals |
+| Dashboard | React, TypeScript, horizontal role-colored React Flow workflow, per-agent activity history, browser, terminal, or report Preview, reference attachments, Monaco, file explorer, Git diff, logs, tests, approvals |
 | Hardening | Budgets, worker heartbeat recovery, fault injection, sandbox checks, browser tests |
 
 ```mermaid
@@ -99,7 +99,7 @@ npm run test
 npm run test:e2e
 ```
 
-The browser suite runs fourteen API-fixture scenarios. Its optional legacy live demo requires `M5_LIVE_TOKEN` and running API, worker, PostgreSQL, Redis, and Docker services. The M4 integration and M6 worker-kill checks are documented in [the development guide](docs/development-guide.md); stop the persistent worker before either check because they control their own queue worker.
+The browser suite runs fifteen API-fixture scenarios. Its optional legacy live demo requires `M5_LIVE_TOKEN` and running API, worker, PostgreSQL, Redis, and Docker services. The M4 integration and M6 worker-kill checks are documented in [the development guide](docs/development-guide.md); stop the persistent worker before either check because they control their own queue worker.
 
 The M7 local checks passed **53 Python tests**, **3 frontend unit tests**, a production dashboard build, and **9 fixture-backed browser tests**. A live eight-role Codex Web smoke run completed with five generated Node tests passing in Docker. See the [M7 report](docs/m7-report.md). The M6 live benchmark and sandbox checks are recorded in the [M6 report](docs/m6-report.md). GitHub Actions runs lint, unit tests, frontend build, and fixture-backed browser tests on each push and pull request.
 
@@ -111,6 +111,7 @@ The automatic Preview changes and current verification are recorded in the [auto
 - A crashed worker leaves uncertain tool calls marked `UNKNOWN` and its run `BLOCKED` for manual reconciliation. It does not blindly replay side effects.
 - The offline Task Manager demo still uses deterministic agents. The Codex path invokes real role sessions. Coordinator selects a sequential task graph for each new prompt from the eight-role registry. A standalone web app completed a live eight-role smoke run; the new dynamic planner and report route have automated mock-runtime tests but have not yet completed a live Codex smoke run. Codex Web currently produces standalone HTML/CSS/JavaScript without a backend or external dependencies.
 - Research roles run without network access. For current facts or source-backed reports, attach reference documents; the report must state when external evidence was unavailable.
+- The activity panel records observable Codex tool names, search queries or opened pages when those actions occur, attached reference names, output paths, and readable reasoning summaries when Codex provides them. It does not record raw private reasoning or command output. Older runs can show only the activity events that were captured at the time.
 - ChatGPT-plan Codex runs do not expose a USD price to this platform. The dashboard leaves USD budget/spend unset for those runs; the time limit still applies. Usage remains subject to the connected account's plan and limits.
 - Codex login is stored per local platform user under ignored `.local/platform/codex-accounts/`. The application never reads or copies the existing Windows Codex `auth.json`. Generated tests run in Docker. A web preview runs JavaScript in a sandboxed, opaque-origin iframe with a restrictive content security policy.
 - The editor, diff, and terminal views are read-only. The benchmark does not create approval requests on its own.

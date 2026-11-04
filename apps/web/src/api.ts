@@ -72,6 +72,8 @@ export const api = {
     }),
   run: (token: string, runId: string) => request<Run>(`/api/runs/${runId}`, token),
   tasks: (token: string, runId: string) => request<Task[]>(`/api/runs/${runId}/tasks`, token),
+  taskActivity: (token: string, runId: string, taskId: string) =>
+    request<RunEvent[]>(`/api/runs/${runId}/tasks/${encodeURIComponent(taskId)}/activity`, token),
   events: (token: string, runId: string, after = 0) =>
     request<RunEvent[]>(`/api/runs/${runId}/events?after_seq=${after}`, token),
   tools: (token: string, runId: string) =>
