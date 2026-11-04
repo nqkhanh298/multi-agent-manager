@@ -99,7 +99,7 @@ npm run test
 npm run test:e2e
 ```
 
-The browser suite runs thirteen API-fixture scenarios. Its optional legacy live demo requires `M5_LIVE_TOKEN` and running API, worker, PostgreSQL, Redis, and Docker services. The M4 integration and M6 worker-kill checks are documented in [the development guide](docs/development-guide.md); stop the persistent worker before either check because they control their own queue worker.
+The browser suite runs fourteen API-fixture scenarios. Its optional legacy live demo requires `M5_LIVE_TOKEN` and running API, worker, PostgreSQL, Redis, and Docker services. The M4 integration and M6 worker-kill checks are documented in [the development guide](docs/development-guide.md); stop the persistent worker before either check because they control their own queue worker.
 
 The M7 local checks passed **53 Python tests**, **3 frontend unit tests**, a production dashboard build, and **9 fixture-backed browser tests**. A live eight-role Codex Web smoke run completed with five generated Node tests passing in Docker. See the [M7 report](docs/m7-report.md). The M6 live benchmark and sandbox checks are recorded in the [M6 report](docs/m6-report.md). GitHub Actions runs lint, unit tests, frontend build, and fixture-backed browser tests on each push and pull request.
 

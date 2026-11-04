@@ -105,8 +105,7 @@ export function Workflow({ tasks, selectedTaskId, onSelect }: { tasks: Task[]; s
         nodes={nodes.map((node) => ({ ...node, selected: node.id === selectedTaskId }))}
         edges={edges}
         nodeTypes={nodeTypes}
-        fitView
-        fitViewOptions={{ padding: 0.06, minZoom: 0.85, maxZoom: 1 }}
+        defaultViewport={{ x: 0, y: 0, zoom: 1 }}
         nodesDraggable={false}
         nodesConnectable={false}
         panOnDrag={false}

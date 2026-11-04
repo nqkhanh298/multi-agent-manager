@@ -169,6 +169,33 @@ test('shows a coordinator-selected research team and report preview', async ({ p
   await expect(page.getByRole('button', { name: 'Tải báo cáo' })).toBeEnabled()
 })
 
+test('keeps the graph aligned when Coordinator adds agents during a run', async ({ page }) => {
+  const state = await mockPlatform(page)
+  state.runs[0].engine = 'codex_auto'
+  state.tasks.splice(0, state.tasks.length,
+    { id: 'T1', title: 'Plan', agent_role: 'coordinator', status: 'RUNNING', depends_on: [], workspace_ref: null },
+  )
+  await page.goto('/')
+  await expect(page.locator('.react-flow__node')).toHaveCount(1)
+  state.tasks[0].status = 'COMPLETED'
+  for (const [index, role] of ['researcher', 'writer', 'qa', 'release'].entries()) {
+    state.tasks.push({
+      id: `T${index + 2}`, title: `${role} task`, agent_role: role,
+      status: index === 0 ? 'RUNNING' : 'PENDING',
+      depends_on: [`T${index + 1}`], workspace_ref: null,
+    })
+  }
+  await expect(page.locator('.react-flow__node')).toHaveCount(5, { timeout: 7000 })
+  const canvas = page.locator('.workflow-canvas')
+  const coordinator = page.locator('.react-flow__node[data-id="T1"]')
+  const first = await coordinator.boundingBox()
+  const visible = await canvas.boundingBox()
+  expect(first && visible).toBeTruthy()
+  expect(first!.x - visible!.x).toBeLessThan(100)
+  expect(first!.x - visible!.x).toBeGreaterThan(-100)
+  await expect(page.locator('.react-flow__node[data-id="T2"]')).toBeInViewport()
+})
+
 test('assigns a specific model to a role and saves the choice', async ({ page }) => {
   await mockPlatform(page)
   let saved: Record<string, { provider: string; model: string }> | null = null
